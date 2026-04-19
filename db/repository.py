@@ -140,16 +140,16 @@ def get_test_with_questions(test_id: int) -> tuple[dict[str, Any] | None, list[d
             return test_row, questions
 
 
-def create_attempt(test_id: int) -> int:
+def create_attempt(test_id: int, practice_mode: bool = False) -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO attempts (test_id, status)
-                VALUES (%s, 'in_progress')
+                INSERT INTO attempts (test_id, status, practice_mode)
+                VALUES (%s, 'in_progress', %s)
                 RETURNING id
                 """,
-                (test_id,),
+                (test_id, practice_mode),
             )
             attempt_id = cur.fetchone()[0]
         conn.commit()
@@ -379,6 +379,7 @@ def get_review_attempts(limit: int = 100) -> list[dict[str, Any]]:
                     a.score_percent,
                     a.started_at,
                     a.submitted_at,
+                    a.practice_mode,
                     t.exam_type,
                     t.section,
                     t.difficulty
@@ -451,11 +452,13 @@ def get_recent_activity(limit: int = 10) -> list[dict[str, Any]]:
                 """
                 SELECT
                     a.id AS attempt_id,
+                    t.id AS test_id,
                     t.exam_type,
                     t.section,
                     t.difficulty,
                     a.score_percent,
                     a.status,
+                    a.practice_mode,
                     COALESCE(a.submitted_at, a.started_at) AS activity_time
                 FROM attempts a
                 JOIN tests t ON t.id = a.test_id

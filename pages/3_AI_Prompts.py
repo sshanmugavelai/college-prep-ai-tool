@@ -3,12 +3,13 @@ import streamlit as st
 from ai.prompts import (
     MISTAKE_EXPLANATION_PROMPT,
     QUESTION_GENERATION_PROMPT,
+    REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
 )
 
 
 st.title("🤖 Claude Prompt Templates")
-st.caption("Reusable prompts for question generation, mistake analysis, and study planning.")
+st.caption("Reusable prompts for question generation, mistake analysis, review hints, and study planning.")
 
 st.subheader("1) Question generation prompt")
 st.code(
@@ -47,6 +48,21 @@ st.code(
             "- SAT Math (medium): 68%\n"
             "- ACT Writing (hard): 70%"
         )
+    ),
+    language="text",
+)
+
+st.subheader("4) Post-test review hints (flashcards / spaced review)")
+st.code(
+    REVIEW_HINTS_PROMPT.format(
+        exam_type="SAT",
+        section="Reading",
+        topic="inference",
+        difficulty="medium",
+        question="Which choice is best supported by the passage?",
+        choices_lines="A. First\nB. Second\nC. Third\nD. Fourth",
+        user_answer="B",
+        correct_answer="C",
     ),
     language="text",
 )

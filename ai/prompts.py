@@ -50,6 +50,32 @@ Return ONLY valid JSON in this exact schema:
 """
 
 
+REVIEW_HINTS_PROMPT = """
+You are a patient SAT/ACT tutor. The student already submitted this question — they may have been correct,
+used a longer path, or picked a wrong answer for an interesting reason. They are reviewing on flashcards
+or with hints (not re-taking the test).
+
+Exam: {exam_type}
+Section: {section}
+Topic: {topic}
+Difficulty: {difficulty}
+Question: {question}
+Choices (A–D): {choices_lines}
+The student's answer was: {user_answer}
+The correct answer is: {correct_answer} (use this only to shape hints; do not leak the letter in hints 1–2.)
+
+Write exactly 3 short hints for spaced review, from gentle → more specific:
+- Hint 1: skill or reading strategy to try first (no letters).
+- Hint 2: a nudge about comparing choices or checking evidence (no correct letter).
+- Hint 3: may narrow the reasoning but still keep it study-focused (avoid spoiling the click if possible).
+
+Return ONLY valid JSON:
+{{
+  "hints": ["...", "...", "..."]
+}}
+"""
+
+
 STUDY_PLAN_PROMPT = """
 You are an SAT/ACT prep coach.
 Generate a 7-day study plan based on the student performance data.

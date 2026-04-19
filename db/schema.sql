@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     correct_count INTEGER,
     total_questions INTEGER,
     score_percent NUMERIC(5, 2),
-    ai_recommendation TEXT
+    ai_recommendation TEXT,
+    practice_mode BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS answers (

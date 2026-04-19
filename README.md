@@ -10,28 +10,16 @@ No microservices. No Redis. No complex infra.
 ## 1) Simple Architecture (End-to-End)
 
 ### Streamlit UI flow
-1. **Dashboard (`app.py`)**
-   - shows total tests, average score, weak topics, recent activity, next recommendation.
-2. **Generate Practice Test (`pages/1_Generate_Practice_Test.py`)**
-   - pick exam/section/count/difficulty/timed.
-   - call Claude to generate structured JSON questions.
-   - save test + questions to Postgres.
-3. **Take Test (`pages/2_Take_Test.py`)**
-   - start attempt from a saved test.
-   - answer one question at a time.
-   - optional timer.
-   - submit attempt.
-4. **Review Results (`pages/3_Review_Results.py`)**
-   - calculate and display score.
-   - show selected vs correct answers + explanations.
-   - generate AI mistake feedback and store it.
-5. **Mistake Journal (`pages/4_Mistake_Journal.py`)**
-   - list incorrect answers grouped/filterable by topic.
-   - generate retry test from open mistakes.
-6. **Progress & Study Plan (`pages/5_Progress_and_Study_Plan.py`)**
-   - score trend chart, topic accuracy chart.
-   - ask Claude for weekly study plan from performance summary.
-7. **AI Prompt Templates (`pages/6_AI_Prompts.py`)**
+1. **Main workspace (`Dashboard.py` + `workspace_sections.py`)** — one screen with steps: **Overview**, **Generate tests**, **Take test**, **Review**.
+   - *Overview*: metrics, weak topics, recent activity, recommended next practice.
+   - *Generate*: exam/section/count/difficulty/timed; Claude JSON questions; list saved tests.
+   - *Take test*: start attempt, one question at a time, optional timer, submit.
+   - *Review*: attempt summary, per-question explanations, AI mistake feedback.
+2. **Mistake Journal (`pages/1_Mistake_Journal.py`)**
+   - list incorrect answers grouped/filterable by topic; retry tests from mistakes.
+3. **Progress & Study Plan (`pages/2_Progress_and_Study_Plan.py`)**
+   - score trend, topic accuracy, weekly AI study plan.
+4. **AI Prompt Templates (`pages/3_AI_Prompts.py`)**
    - reusable prompts for generation, explanation, coaching.
 
 ### Backend logic (simple service/repository style)
@@ -87,14 +75,12 @@ Schema file: `db/schema.sql`
 
 ```text
 .
-├── app.py
+├── Dashboard.py
+├── workspace_sections.py
 ├── pages/
-│   ├── 1_Generate_Practice_Test.py
-│   ├── 2_Take_Test.py
-│   ├── 3_Review_Results.py
-│   ├── 4_Mistake_Journal.py
-│   ├── 5_Progress_and_Study_Plan.py
-│   └── 6_AI_Prompts.py
+│   ├── 1_Mistake_Journal.py
+│   ├── 2_Progress_and_Study_Plan.py
+│   └── 3_AI_Prompts.py
 ├── db/
 │   ├── connection.py
 │   ├── init_db.py
@@ -250,7 +236,7 @@ Edit `.env`:
 
 ### 4) Run app
 ```bash
-streamlit run app.py
+streamlit run Dashboard.py
 ```
 
 In the app, click **Initialize / Verify Database** once.

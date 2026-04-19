@@ -1,32 +1,30 @@
 import json
-import os
 from typing import Any
 
 from anthropic import Anthropic
-from dotenv import load_dotenv
 
 from ai.prompts import (
     MISTAKE_EXPLANATION_PROMPT,
     QUESTION_GENERATION_PROMPT,
+    REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
 )
-
-
-load_dotenv()
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+from utils.config import get_anthropic_api_key, get_anthropic_model
 
 
 class ClaudeClient:
     def __init__(self) -> None:
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to your .env file.")
-        self.client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        key = get_anthropic_api_key()
+        if not key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set. For local development add it to a .env file; "
+                "on Streamlit Community Cloud add ANTHROPIC_API_KEY under App settings → Secrets."
+            )
+        self.client = Anthropic(api_key=key)
 
     def _call_json(self, prompt: str) -> dict[str, Any]:
         response = self.client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=get_anthropic_model(),
             max_tokens=4000,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
@@ -74,6 +72,32 @@ class ClaudeClient:
 
     def generate_study_plan(self, performance_summary: str) -> dict[str, Any]:
         prompt = STUDY_PLAN_PROMPT.format(performance_summary=performance_summary)
+        return self._call_json(prompt)
+
+    def generate_review_hints(
+        self,
+        exam_type: str,
+        section: str,
+        question: str,
+        choices: list[str],
+        correct_answer: str,
+        user_answer: str,
+        topic: str,
+        difficulty: str,
+    ) -> dict[str, Any]:
+        labels = ["A", "B", "C", "D"]
+        lines = [f"{labels[i]}. {choices[i]}" for i in range(min(4, len(choices)))]
+        choices_lines = "\n".join(lines)
+        prompt = REVIEW_HINTS_PROMPT.format(
+            exam_type=exam_type,
+            section=section,
+            topic=topic,
+            difficulty=difficulty,
+            question=question,
+            choices_lines=choices_lines,
+            user_answer=user_answer or "No answer",
+            correct_answer=correct_answer,
+        )
         return self._call_json(prompt)
 
 
