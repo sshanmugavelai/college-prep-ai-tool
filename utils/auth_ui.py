@@ -16,7 +16,7 @@ def render_login_page() -> None:
         if not row:
             st.error("Unknown username.")
             return
-        st.session_state.user_id = row["id"]
+        st.session_state.user_id = int(row["id"])
         st.session_state.username = row["username"]
         st.session_state.display_name = row["display_name"]
         st.session_state.learner_level = row["learner_level"]

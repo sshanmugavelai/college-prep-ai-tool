@@ -2,7 +2,18 @@ import streamlit as st
 
 # Bump this when auth or session keys change so Streamlit Cloud visitors are not stuck
 # with a stale ``user_id`` from an old session (session_state survives reruns and deploys).
-AUTH_SESSION_VERSION = 2
+AUTH_SESSION_VERSION = 3
+
+
+def is_logged_in() -> bool:
+    """Require a positive integer user id (avoids truthy junk in session_state on Streamlit Cloud)."""
+    uid = st.session_state.get("user_id")
+    if uid is None:
+        return False
+    try:
+        return int(uid) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def ensure_auth_session_version() -> None:

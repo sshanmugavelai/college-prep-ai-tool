@@ -6,10 +6,10 @@ from db.repository import (
     list_tests,
 )
 from utils.auth_ui import learner_badge, logout_button, render_login_page, require_user_id
-from utils.session import ensure_auth_session_version
+from utils.session import ensure_auth_session_version, is_logged_in
 
 ensure_auth_session_version()
-if not st.session_state.get("user_id"):
+if not is_logged_in():
     render_login_page()
     st.stop()
 

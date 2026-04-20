@@ -2,14 +2,14 @@ import streamlit as st
 
 from db.init_db import init_db
 from utils.auth_ui import learner_badge, logout_button, render_login_page
-from utils.session import ensure_auth_session_version, init_session_state
+from utils.session import ensure_auth_session_version, init_session_state, is_logged_in
 from workspace_sections import render_generate, render_overview, render_review, render_take_test
 
 
 st.set_page_config(page_title="College Prep AI Tool", page_icon="📘", layout="wide")
 
 ensure_auth_session_version()
-if not st.session_state.get("user_id"):
+if not is_logged_in():
     render_login_page()
     st.stop()
 
