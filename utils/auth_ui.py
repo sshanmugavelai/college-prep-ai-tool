@@ -4,6 +4,7 @@ import streamlit as st
 
 from db.init_db import init_db
 from db.users_repo import get_user_by_username
+from utils.session import clear_streamlit_caches, reset_user_session
 
 
 def render_login_page() -> None:
@@ -11,7 +12,13 @@ def render_login_page() -> None:
     st.caption("Enter your learner username to continue.")
 
     username = st.text_input("Username", autocomplete="username")
-    if st.button("Continue", type="primary"):
+    c1, c2 = st.columns(2)
+    with c1:
+        go = st.button("Continue", type="primary", use_container_width=True, key="login_continue")
+    with c2:
+        reset = st.button("Reset session & caches", use_container_width=True, key="login_reset")
+
+    if go:
         row = get_user_by_username(username)
         if not row:
             st.error("Unknown username.")
@@ -20,6 +27,10 @@ def render_login_page() -> None:
         st.session_state.username = row["username"]
         st.session_state.display_name = row["display_name"]
         st.session_state.learner_level = row["learner_level"]
+        st.rerun()
+
+    if reset:
+        reset_user_session()
         st.rerun()
 
     with st.expander("First-time setup"):
@@ -39,17 +50,30 @@ def require_user_id() -> int:
     return int(uid)
 
 
-def logout_button() -> None:
-    if st.sidebar.button("Sign out"):
-        for k in ("user_id", "username", "display_name", "learner_level", "current_attempt_id"):
-            st.session_state.pop(k, None)
-        st.session_state.question_index = 0
-        st.session_state.attempt_started_at = None
+def account_sidebar(*, key_prefix: str = "acct") -> None:
+    """Call inside ``with st.sidebar:``. Log out clears session + Streamlit caches."""
+    st.subheader("Account")
+    if st.button(
+        "Log out",
+        key=f"{key_prefix}_logout",
+        type="primary",
+        use_container_width=True,
+    ):
+        reset_user_session()
+        st.rerun()
+    if st.button(
+        "Clear caches only",
+        key=f"{key_prefix}_cache",
+        help="Clears @st.cache_data / @st.cache_resource; stays signed in",
+        use_container_width=True,
+    ):
+        clear_streamlit_caches()
         st.rerun()
 
 
 def learner_badge() -> None:
+    """Call inside ``with st.sidebar:``."""
     name = st.session_state.get("display_name", "")
     level = st.session_state.get("learner_level", "")
     label = "SAT / high school prep" if level == "sat" else "Grade-level practice (middle school)"
-    st.sidebar.caption(f"**{name}** · {label}")
+    st.caption(f"**{name}** · {label}")

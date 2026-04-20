@@ -7,13 +7,18 @@ from ai.prompts import (
     REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
 )
-from utils.auth_ui import render_login_page
+from utils.auth_ui import account_sidebar, learner_badge, render_login_page
 from utils.session import ensure_auth_session_version, is_logged_in
 
 ensure_auth_session_version()
 if not is_logged_in():
     render_login_page()
     st.stop()
+
+with st.sidebar:
+    st.page_link("Dashboard.py", label="← Dashboard", icon="📘")
+    learner_badge()
+    account_sidebar(key_prefix="prompts")
 
 st.title("🤖 Claude Prompt Templates")
 st.caption("Reusable prompts for question generation, mistake analysis, review hints, and study planning.")

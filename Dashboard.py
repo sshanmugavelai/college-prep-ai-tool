@@ -1,7 +1,7 @@
 import streamlit as st
 
 from db.init_db import init_db
-from utils.auth_ui import learner_badge, logout_button, render_login_page
+from utils.auth_ui import account_sidebar, learner_badge, render_login_page
 from utils.session import ensure_auth_session_version, init_session_state, is_logged_in
 from workspace_sections import render_generate, render_overview, render_review, render_take_test
 
@@ -22,7 +22,7 @@ if "_pending_workspace_step" in st.session_state:
 with st.sidebar:
     st.header("College Prep AI")
     learner_badge()
-    logout_button()
+    account_sidebar(key_prefix="dash")
     st.caption("SAT/ACT practice with Claude + Postgres")
     if st.button("Initialize / Verify Database"):
         try:

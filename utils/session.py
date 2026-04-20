@@ -2,7 +2,7 @@ import streamlit as st
 
 # Bump this when auth or session keys change so Streamlit Cloud visitors are not stuck
 # with a stale ``user_id`` from an old session (session_state survives reruns and deploys).
-AUTH_SESSION_VERSION = 3
+AUTH_SESSION_VERSION = 4
 
 
 def is_logged_in() -> bool:
@@ -42,3 +42,37 @@ def reset_attempt_state() -> None:
     st.session_state.current_attempt_id = None
     st.session_state.question_index = 0
     st.session_state.attempt_started_at = None
+
+
+def clear_streamlit_caches() -> None:
+    """Clear @st.cache_data / @st.cache_resource (safe no-op if unused)."""
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
+
+
+# Keys removed on log out / “reset session” (not Streamlit internals like widget state).
+_SESSION_RESET_KEYS = (
+    "user_id",
+    "username",
+    "display_name",
+    "learner_level",
+    "current_attempt_id",
+    "question_index",
+    "attempt_started_at",
+    "workspace_step",
+    "_pending_workspace_step",
+    "test_filters",
+)
+
+
+def reset_user_session() -> None:
+    """Drop login + workspace state so the username screen shows again."""
+    clear_streamlit_caches()
+    for k in _SESSION_RESET_KEYS:
+        st.session_state.pop(k, None)
