@@ -8,7 +8,9 @@ from ai.prompts import (
     STUDY_PLAN_PROMPT,
 )
 from utils.auth_ui import render_login_page
+from utils.session import ensure_auth_session_version
 
+ensure_auth_session_version()
 if not st.session_state.get("user_id"):
     render_login_page()
     st.stop()

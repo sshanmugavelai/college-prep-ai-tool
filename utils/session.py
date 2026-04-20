@@ -1,5 +1,19 @@
 import streamlit as st
 
+# Bump this when auth or session keys change so Streamlit Cloud visitors are not stuck
+# with a stale ``user_id`` from an old session (session_state survives reruns and deploys).
+AUTH_SESSION_VERSION = 2
+
+
+def ensure_auth_session_version() -> None:
+    """Clear cached login if this deploy expects a different session shape."""
+    key = "_auth_session_version"
+    if st.session_state.get(key) == AUTH_SESSION_VERSION:
+        return
+    for k in ("user_id", "username", "display_name", "learner_level", "current_attempt_id"):
+        st.session_state.pop(k, None)
+    st.session_state[key] = AUTH_SESSION_VERSION
+
 
 def init_session_state() -> None:
     defaults = {
