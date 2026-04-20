@@ -5,17 +5,34 @@ from db.repository import (
     list_mistakes,
     list_tests,
 )
+from utils.auth_ui import learner_badge, logout_button, render_login_page, require_user_id
 
+
+if not st.session_state.get("user_id"):
+    render_login_page()
+    st.stop()
+
+user_id = require_user_id()
 
 st.title("📒 Mistake Journal")
 st.caption("Track incorrect answers by topic and create retry tests.")
 
-exam_type = st.selectbox("Exam type", ["SAT", "ACT"])
+with st.sidebar:
+    learner_badge()
+    logout_button()
+
+level = st.session_state.get("learner_level", "sat")
+if level == "middle_school":
+    st.caption("Mistakes from **middle school** practice (not SAT/ACT).")
+    exam_type = "Middle school"
+else:
+    exam_type = st.selectbox("Exam type", ["SAT", "ACT"])
 section = st.selectbox("Section", ["Reading", "Writing", "Math"])
 topic_filter = st.text_input("Topic filter (optional)", value="").strip() or None
 only_open = st.toggle("Show only open mistakes", value=True)
 
 mistakes = list_mistakes(
+    user_id,
     exam_type=exam_type,
     section=section,
     topic=topic_filter,
@@ -63,6 +80,7 @@ max_retry = st.slider("Max questions in retry test", min_value=5, max_value=30, 
 
 if st.button("Create retry test", type="primary"):
     test_id = create_retry_test_from_mistakes(
+        user_id,
         exam_type=exam_type,
         section=section,
         topic=topic_filter,
@@ -75,6 +93,6 @@ if st.button("Create retry test", type="primary"):
 
 st.subheader("Recent tests")
 try:
-    st.dataframe(list_tests(limit=20), use_container_width=True)
+    st.dataframe(list_tests(user_id, limit=20), use_container_width=True)
 except Exception as exc:
     st.error(f"Could not load recent tests: {exc}")

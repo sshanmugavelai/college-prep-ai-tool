@@ -1,11 +1,17 @@
 import streamlit as st
 
 from db.init_db import init_db
+from utils.auth_ui import learner_badge, logout_button, render_login_page
 from utils.session import init_session_state
 from workspace_sections import render_generate, render_overview, render_review, render_take_test
 
 
 st.set_page_config(page_title="College Prep AI Tool", page_icon="📘", layout="wide")
+
+if not st.session_state.get("user_id"):
+    render_login_page()
+    st.stop()
+
 init_session_state()
 
 # Continue/Retake from Overview sets this; must apply before st.radio(key="workspace_step") is created.
@@ -14,6 +20,8 @@ if "_pending_workspace_step" in st.session_state:
 
 with st.sidebar:
     st.header("College Prep AI")
+    learner_badge()
+    logout_button()
     st.caption("SAT/ACT practice with Claude + Postgres")
     if st.button("Initialize / Verify Database"):
         try:

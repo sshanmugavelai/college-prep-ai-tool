@@ -199,11 +199,13 @@ File: `ai/prompts.py`
 
 ---
 
-## Local Setup (Mac mini)
+## Local setup (development machine)
 
-## Prerequisites
+The app talks to **one** Postgres database: whatever you set in `DATABASE_URL`. For this project we use **[Neon](https://neon.tech)** (free tier) — not a separate database on your laptop.
+
+### Prerequisites
 - Python 3.11+
-- Postgres 14+ (local install or Docker)
+- A Neon account and project (Postgres in the cloud)
 - Claude API key
 
 ### 1) Clone and install
@@ -213,33 +215,51 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Start Postgres
-If local Postgres is already running, create DB:
-```bash
-createdb college_prep_ai
-```
-
-Or Docker quick option:
-```bash
-docker run --name college-prep-postgres -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=college_prep_ai -p 5432:5432 -d postgres:16
-```
-
-### 3) Environment variables
+### 2) Environment variables (Neon)
 ```bash
 cp .env.example .env
 ```
-Edit `.env`:
-- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/college_prep_ai`
-- `ANTHROPIC_API_KEY=...`
-- `ANTHROPIC_MODEL=claude-3-5-sonnet-latest`
 
-### 4) Run app
+Edit `.env`:
+
+1. In the **Neon Console**, open your project → **Connect** → copy the **connection string** (URI).
+2. Set `DATABASE_URL` to that URI. It must include SSL, e.g.  
+   `postgresql://USER:PASSWORD@ep-xxxxx.region.aws.neon.tech/neondb?sslmode=require`
+3. Set `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL`.
+
+There is **no** second “local Postgres” to configure for normal use. If `DATABASE_URL` points at Neon, every query and migration uses Neon.
+
+### 3) Create tables on Neon (once per empty database)
+With `.env` pointing at Neon:
+
+```bash
+python -c "from db.init_db import init_db; init_db()"
+```
+
+Or start the app and click **Initialize / Verify Database** in the sidebar (same operation).
+
+### 4) Run the app
 ```bash
 streamlit run Dashboard.py
 ```
 
-In the app, click **Initialize / Verify Database** once.
+### Family learner accounts
+After the database is initialized, the app seeds **two accounts** (same dummy password for home use):
+
+| Username | Who | Track |
+|----------|-----|--------|
+| `ashwika` | Ashwika | SAT / high school prep (`sat`) — full SAT/ACT-style generation |
+| `thrishi` | Thrishi | Grade-level practice (`middle_school`) — easier, middle-school math/ELA, not SAT-hard |
+
+Default password for both: **`prep2026`** (change later in the DB or by adding a password-change flow).
+
+Each learner signs in on the Dashboard; **tests, attempts, mistakes, and progress are kept separate** per user.
+
+### Streamlit Community Cloud
+Use the **same** `DATABASE_URL` (Neon URI) and API keys under **App settings → Secrets** — not `localhost`.
+
+### Optional: Postgres on your own machine
+Only if you explicitly want Docker/local Postgres for experiments: run a container, create a database, and set `DATABASE_URL` to that instance instead of Neon. The application code is identical.
 
 ---
 

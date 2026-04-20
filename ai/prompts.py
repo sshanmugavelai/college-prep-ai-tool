@@ -1,3 +1,33 @@
+QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT = """
+You are a middle school (grades 6–8) skills tutor. This is NOT SAT or ACT exam prep.
+Write original practice questions for {section} at a grade-appropriate level (about 7th grade).
+
+Requirements:
+- Number of questions: {num_questions}
+- Difficulty: {difficulty} (interpret as age-appropriate, not SAT-hard)
+- Avoid SAT-style traps, long multi-step SAT math, or college-prep jargon.
+- Use clear, encouraging language. Reading passages should be short. Math should be pre-algebra / early algebra only.
+- Each question must have exactly 4 choices.
+- correct_answer must be one of: A, B, C, D.
+- topic should be a concise skill tag (e.g. fractions, vocabulary, sentence basics).
+- explanation should be 2-4 sentences.
+
+Return ONLY valid JSON in this exact schema:
+{{
+  "questions": [
+    {{
+      "question": "...",
+      "choices": ["...", "...", "...", "..."],
+      "correct_answer": "B",
+      "explanation": "...",
+      "topic": "fractions",
+      "difficulty": "{difficulty}"
+    }}
+  ]
+}}
+"""
+
+
 QUESTION_GENERATION_PROMPT = """
 You are an SAT/ACT question writer and tutor.
 Generate original {exam_type} {section} questions.

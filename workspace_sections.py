@@ -19,6 +19,7 @@ from db.repository import (
     submit_attempt,
     update_ai_feedback,
 )
+from utils.auth_ui import require_user_id
 from utils.session import reset_attempt_state
 from utils.validation import validate_questions_payload
 
@@ -31,8 +32,8 @@ def _fmt_activity_time(value: object) -> str:
     return str(value)
 
 
-def _resume_attempt(attempt_id: int) -> None:
-    attempt = get_attempt(attempt_id)
+def _resume_attempt(attempt_id: int, user_id: int) -> None:
+    attempt = get_attempt(attempt_id, user_id)
     if not attempt:
         st.error("Attempt not found.")
         return
@@ -40,7 +41,7 @@ def _resume_attempt(attempt_id: int) -> None:
         st.error("This attempt is not in progress.")
         return
     st.session_state.current_attempt_id = attempt_id
-    questions = get_attempt_questions(attempt_id)
+    questions = get_attempt_questions(attempt_id, user_id)
     first_unanswered = 0
     for i, q in enumerate(questions):
         if not q.get("selected_answer"):
@@ -57,8 +58,8 @@ def _resume_attempt(attempt_id: int) -> None:
     st.rerun()
 
 
-def _retake_same_test(test_id: int) -> None:
-    new_id = create_attempt(test_id, practice_mode=False)
+def _retake_same_test(test_id: int, user_id: int) -> None:
+    new_id = create_attempt(test_id, user_id, practice_mode=False)
     st.session_state.current_attempt_id = new_id
     st.session_state.question_index = 0
     st.session_state.attempt_started_at = int(time.time())
@@ -67,9 +68,10 @@ def _retake_same_test(test_id: int) -> None:
 
 
 def render_overview() -> None:
+    user_id = require_user_id()
     try:
-        stats = get_dashboard_stats()
-        recent = get_recent_activity(limit=8)
+        stats = get_dashboard_stats(user_id)
+        recent = get_recent_activity(user_id, limit=8)
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Total tests taken", stats.total_tests_taken)
@@ -108,11 +110,11 @@ def render_overview() -> None:
                 with rcols[6]:
                     if row.get("status") == "in_progress":
                         if st.button("Continue", key=f"ov_cont_{row['attempt_id']}", type="primary"):
-                            _resume_attempt(int(row["attempt_id"]))
+                            _resume_attempt(int(row["attempt_id"]), user_id)
                     else:
                         tid = int(row["test_id"])
                         if st.button("Retake", key=f"ov_retake_{row['attempt_id']}", help="Start a new attempt with the same questions"):
-                            _retake_same_test(tid)
+                            _retake_same_test(tid, user_id)
         else:
             st.write("No attempts yet. Generate a practice test and complete an attempt.")
     except Exception as exc:
@@ -121,10 +123,16 @@ def render_overview() -> None:
 
 
 def render_generate() -> None:
+    user_id = require_user_id()
+    level = st.session_state.get("learner_level", "sat")
     st.subheader("Generate practice test")
-    st.caption("Claude generates original SAT/ACT-style questions in structured JSON.")
-
-    exam_type = st.selectbox("Exam type", ["SAT", "ACT"])
+    if level == "middle_school":
+        st.caption("Claude writes **grade-level** practice (middle school) — not full SAT/ACT difficulty.")
+        st.markdown("**Track:** Middle school skills (Reading / Writing / Math) — not an SAT or ACT paper.")
+        exam_type = "Middle school"
+    else:
+        st.caption("Claude generates original SAT/ACT-style questions in structured JSON.")
+        exam_type = st.selectbox("Exam type", ["SAT", "ACT"])
     section = st.selectbox("Section", ["Reading", "Writing", "Math"])
     num_questions = st.slider("Number of questions", min_value=5, max_value=40, value=10, step=1)
     difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=1)
@@ -144,9 +152,11 @@ def render_generate() -> None:
                     section=section,
                     num_questions=num_questions,
                     difficulty=difficulty,
+                    learner_level=level,
                 )
                 questions = validate_questions_payload(payload, expected_count=num_questions)
                 test_id = create_test_with_questions(
+                    user_id,
                     exam_type=exam_type,
                     section=section,
                     num_questions=num_questions,
@@ -182,7 +192,7 @@ def render_generate() -> None:
 
     st.subheader("Available tests")
     try:
-        tests = list_tests(limit=50)
+        tests = list_tests(user_id, limit=50)
         if tests:
             st.dataframe(tests, use_container_width=True)
         else:
@@ -191,14 +201,15 @@ def render_generate() -> None:
         st.error(f"Could not load tests: {exc}")
 
 
-def _start_attempt(test_id: int, practice_mode: bool = False) -> None:
-    attempt_id = create_attempt(test_id, practice_mode=practice_mode)
+def _start_attempt(test_id: int, user_id: int, practice_mode: bool = False) -> None:
+    attempt_id = create_attempt(test_id, user_id, practice_mode=practice_mode)
     st.session_state.current_attempt_id = attempt_id
     st.session_state.question_index = 0
     st.session_state.attempt_started_at = int(time.time())
 
 
 def render_take_test() -> None:
+    user_id = require_user_id()
     st.subheader("Take test")
     st.caption(
         "Choose **Real test** for exam-style conditions (no hints). "
@@ -206,7 +217,7 @@ def render_take_test() -> None:
     )
 
     if not st.session_state.current_attempt_id:
-        tests = list_tests(limit=100)
+        tests = list_tests(user_id, limit=100)
         if not tests:
             st.info("No tests available yet. Generate one in **Generate tests**.")
             return
@@ -224,18 +235,18 @@ def render_take_test() -> None:
         )
         practice_mode = "Practice" in test_mode
         if st.button("Start test", type="primary"):
-            _start_attempt(selected_test["id"], practice_mode=practice_mode)
+            _start_attempt(selected_test["id"], user_id, practice_mode=practice_mode)
             st.rerun()
         return
 
     attempt_id = st.session_state.current_attempt_id
-    attempt = get_attempt(attempt_id)
+    attempt = get_attempt(attempt_id, user_id)
     if not attempt:
         st.error("Attempt not found. Restarting state.")
         reset_attempt_state()
         return
 
-    questions = get_attempt_questions(attempt_id)
+    questions = get_attempt_questions(attempt_id, user_id)
     total = len(questions)
     if total == 0:
         st.warning("This test has no questions.")
@@ -272,7 +283,7 @@ def render_take_test() -> None:
         remaining_sec = int(attempt["time_limit_minutes"]) * 60 - elapsed_sec
         if remaining_sec <= 0:
             st.error("Time is up. Submitting automatically.")
-            submit_attempt(attempt_id)
+            submit_attempt(attempt_id, user_id)
             reset_attempt_state()
             st.rerun()
         mins = remaining_sec // 60
@@ -325,7 +336,7 @@ def render_take_test() -> None:
             user_answer = st.session_state.get(f"answer_{qq['question_id']}")
             if user_answer in {"A", "B", "C", "D"}:
                 save_answer(attempt_id, qq["question_id"], user_answer)
-        submit_attempt(attempt_id)
+        submit_attempt(attempt_id, user_id)
         st.success("Test submitted! Open **Review** to see results.")
         reset_attempt_state()
         st.rerun()
@@ -441,6 +452,7 @@ def _render_flashcard_mode(
 def _ensure_ai_feedback_for_question(
     client: ClaudeClient,
     attempt_id: int,
+    user_id: int,
     selected_attempt: dict,
     q: dict,
 ) -> dict:
@@ -459,18 +471,19 @@ def _ensure_ai_feedback_for_question(
         topic=q["topic"],
         difficulty=q["difficulty"],
     )
-    update_ai_feedback(attempt_id, q["question_id"], feedback)
+    update_ai_feedback(attempt_id, q["question_id"], user_id, feedback)
     return feedback
 
 
 def render_review() -> None:
+    user_id = require_user_id()
     st.subheader("Review results")
     st.caption(
         "Question list for line-by-line review, or **flashcards** to rehearse without spoiling the answer first. "
         "Hints work either way — useful if your student used a different approach."
     )
 
-    attempts = [a for a in get_review_attempts(limit=100) if a["status"] == "submitted"]
+    attempts = [a for a in get_review_attempts(user_id, limit=100) if a["status"] == "submitted"]
     if not attempts:
         st.info("No submitted attempts yet. Take and submit a test first.")
         return
@@ -497,7 +510,7 @@ def render_review() -> None:
         "Practice" if selected_attempt.get("practice_mode") else "Real test",
     )
 
-    questions = get_attempt_questions(attempt_id)
+    questions = get_attempt_questions(attempt_id, user_id)
     wrong_questions = [q for q in questions if not q["is_correct"]]
 
     st.markdown("---")
@@ -508,7 +521,7 @@ def render_review() -> None:
             try:
                 client = ClaudeClient()
                 for q in wrong_questions:
-                    _ensure_ai_feedback_for_question(client, attempt_id, selected_attempt, q)
+                    _ensure_ai_feedback_for_question(client, attempt_id, user_id, selected_attempt, q)
                 st.success("AI feedback generated for all mistakes.")
                 st.rerun()
             except Exception as exc:
@@ -548,7 +561,7 @@ def render_review() -> None:
                             try:
                                 client = ClaudeClient()
                                 feedback = _ensure_ai_feedback_for_question(
-                                    client, attempt_id, selected_attempt, q
+                                    client, attempt_id, user_id, selected_attempt, q
                                 )
                                 st.success("AI feedback saved.")
                             except Exception as exc:

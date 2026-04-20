@@ -2,19 +2,34 @@ import streamlit as st
 
 from ai.prompts import (
     MISTAKE_EXPLANATION_PROMPT,
+    QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT,
     QUESTION_GENERATION_PROMPT,
     REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
 )
+from utils.auth_ui import render_login_page
 
+if not st.session_state.get("user_id"):
+    render_login_page()
+    st.stop()
 
 st.title("🤖 Claude Prompt Templates")
 st.caption("Reusable prompts for question generation, mistake analysis, review hints, and study planning.")
 
-st.subheader("1) Question generation prompt")
+st.subheader("1) Question generation prompt (SAT / high school track)")
 st.code(
     QUESTION_GENERATION_PROMPT.format(
         exam_type="SAT",
+        section="Math",
+        num_questions=10,
+        difficulty="medium",
+    ),
+    language="text",
+)
+
+st.subheader("1b) Middle school (grade-level) generation — Thrishi’s track")
+st.code(
+    QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT.format(
         section="Math",
         num_questions=10,
         difficulty="medium",

@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS tests (
     id BIGSERIAL PRIMARY KEY,
-    exam_type TEXT NOT NULL CHECK (exam_type IN ('SAT', 'ACT')),
+    exam_type TEXT NOT NULL CHECK (exam_type IN ('SAT', 'ACT', 'Middle school')),
     section TEXT NOT NULL CHECK (section IN ('Reading', 'Writing', 'Math')),
     num_questions INTEGER NOT NULL CHECK (num_questions > 0),
     difficulty TEXT NOT NULL CHECK (difficulty IN ('easy', 'medium', 'hard')),

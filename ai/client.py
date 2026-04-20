@@ -5,6 +5,7 @@ from anthropic import Anthropic
 
 from ai.prompts import (
     MISTAKE_EXPLANATION_PROMPT,
+    QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT,
     QUESTION_GENERATION_PROMPT,
     REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
@@ -38,13 +39,21 @@ class ClaudeClient:
         section: str,
         num_questions: int,
         difficulty: str,
+        learner_level: str = "sat",
     ) -> dict[str, Any]:
-        prompt = QUESTION_GENERATION_PROMPT.format(
-            exam_type=exam_type,
-            section=section,
-            num_questions=num_questions,
-            difficulty=difficulty,
-        )
+        if learner_level == "middle_school":
+            prompt = QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT.format(
+                section=section,
+                num_questions=num_questions,
+                difficulty=difficulty,
+            )
+        else:
+            prompt = QUESTION_GENERATION_PROMPT.format(
+                exam_type=exam_type,
+                section=section,
+                num_questions=num_questions,
+                difficulty=difficulty,
+            )
         return self._call_json(prompt)
 
     def explain_mistake(

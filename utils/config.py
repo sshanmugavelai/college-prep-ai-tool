@@ -1,10 +1,15 @@
 """Resolve secrets from the environment (local .env) or Streamlit Cloud secrets."""
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Project-root .env (not cwd) so `streamlit run` from another directory still loads it.
+# override=True: a stale DATABASE_URL exported in the shell must not shadow the real .env
+# (common cause of "password failed" right after editing .env).
+_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_ROOT / ".env", override=True)
 
 
 def _streamlit_secret(key: str) -> str:

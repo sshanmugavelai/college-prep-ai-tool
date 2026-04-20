@@ -19,6 +19,7 @@ class DashboardStats:
 
 
 def create_test_with_questions(
+    user_id: int,
     exam_type: str,
     section: str,
     num_questions: int,
@@ -32,11 +33,11 @@ def create_test_with_questions(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO tests (exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tests (user_id, exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source),
+                (user_id, exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source),
             )
             test_id = cur.fetchone()[0]
 
@@ -63,7 +64,7 @@ def create_test_with_questions(
         return test_id
 
 
-def list_tests(limit: int = 100) -> list[dict[str, Any]]:
+def list_tests(user_id: int, limit: int = 100) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -73,19 +74,20 @@ def list_tests(limit: int = 100) -> list[dict[str, Any]]:
                     COUNT(a.id) FILTER (WHERE a.status = 'submitted') AS submitted_attempts
                 FROM tests t
                 LEFT JOIN attempts a ON a.test_id = t.id
+                WHERE t.user_id = %s
                 GROUP BY t.id
                 ORDER BY t.created_at DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (user_id, limit),
             )
             return cur.fetchall()
 
 
-def get_test(test_id: int) -> dict[str, Any] | None:
+def get_test(test_id: int, user_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT * FROM tests WHERE id = %s", (test_id,))
+            cur.execute("SELECT * FROM tests WHERE id = %s AND user_id = %s", (test_id, user_id))
             return cur.fetchone()
 
 
@@ -112,10 +114,10 @@ def get_test_questions(test_id: int) -> list[dict[str, Any]]:
             return cur.fetchall()
 
 
-def get_test_with_questions(test_id: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+def get_test_with_questions(test_id: int, user_id: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT * FROM tests WHERE id = %s", (test_id,))
+            cur.execute("SELECT * FROM tests WHERE id = %s AND user_id = %s", (test_id, user_id))
             test_row = cur.fetchone()
             if not test_row:
                 return None, []
@@ -140,16 +142,20 @@ def get_test_with_questions(test_id: int) -> tuple[dict[str, Any] | None, list[d
             return test_row, questions
 
 
-def create_attempt(test_id: int, practice_mode: bool = False) -> int:
+def create_attempt(test_id: int, user_id: int, practice_mode: bool = False) -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM tests WHERE id = %s", (test_id,))
+            row = cur.fetchone()
+            if not row or row[0] != user_id:
+                raise ValueError("Test not found for this learner.")
             cur.execute(
                 """
-                INSERT INTO attempts (test_id, status, practice_mode)
-                VALUES (%s, 'in_progress', %s)
+                INSERT INTO attempts (test_id, user_id, status, practice_mode)
+                VALUES (%s, %s, 'in_progress', %s)
                 RETURNING id
                 """,
-                (test_id, practice_mode),
+                (test_id, user_id, practice_mode),
             )
             attempt_id = cur.fetchone()[0]
         conn.commit()
@@ -180,7 +186,7 @@ def list_in_progress_attempts(limit: int = 100) -> list[dict[str, Any]]:
             return cur.fetchall()
 
 
-def get_attempt(attempt_id: int) -> dict[str, Any] | None:
+def get_attempt(attempt_id: int, user_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -194,14 +200,14 @@ def get_attempt(attempt_id: int) -> dict[str, Any] | None:
                     t.time_limit_minutes
                 FROM attempts a
                 JOIN tests t ON t.id = a.test_id
-                WHERE a.id = %s
+                WHERE a.id = %s AND a.user_id = %s
                 """,
-                (attempt_id,),
+                (attempt_id, user_id),
             )
             return cur.fetchone()
 
 
-def get_attempt_questions(attempt_id: int) -> list[dict[str, Any]]:
+def get_attempt_questions(attempt_id: int, user_id: int) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -222,10 +228,10 @@ def get_attempt_questions(attempt_id: int) -> list[dict[str, Any]]:
                 FROM attempts a
                 JOIN questions q ON q.test_id = a.test_id
                 LEFT JOIN answers ans ON ans.attempt_id = a.id AND ans.question_id = q.id
-                WHERE a.id = %s
+                WHERE a.id = %s AND a.user_id = %s
                 ORDER BY q.question_order
                 """,
-                (attempt_id,),
+                (attempt_id, user_id),
             )
             return cur.fetchall()
 
@@ -245,10 +251,13 @@ def save_answer(attempt_id: int, question_id: int, selected_answer: str) -> None
         conn.commit()
 
 
-def submit_attempt(attempt_id: int) -> dict[str, Any]:
+def submit_attempt(attempt_id: int, user_id: int) -> dict[str, Any]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT test_id FROM attempts WHERE id = %s", (attempt_id,))
+            cur.execute(
+                "SELECT test_id FROM attempts WHERE id = %s AND user_id = %s",
+                (attempt_id, user_id),
+            )
             row = cur.fetchone()
             if not row:
                 raise ValueError(f"Attempt {attempt_id} not found.")
@@ -337,36 +346,41 @@ def submit_attempt(attempt_id: int) -> dict[str, Any]:
                 (attempt_id,),
             )
 
-            _insert_progress_snapshot(cur, attempt_id=attempt_id)
+            _insert_progress_snapshot(cur, attempt_id=attempt_id, user_id=user_id)
 
         conn.commit()
 
-    return get_attempt(attempt_id) or {}
+    return get_attempt(attempt_id, user_id) or {}
 
 
-def update_ai_feedback(attempt_id: int, question_id: int, feedback: dict[str, Any]) -> None:
+def update_ai_feedback(
+    attempt_id: int, question_id: int, user_id: int, feedback: dict[str, Any]
+) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE answers
-                SET ai_feedback = %s
-                WHERE attempt_id = %s AND question_id = %s
+                UPDATE answers ans SET ai_feedback = %s
+                FROM attempts att
+                WHERE ans.attempt_id = att.id AND att.id = %s AND att.user_id = %s
+                  AND ans.question_id = %s
                 """,
-                (Json(feedback), attempt_id, question_id),
+                (Json(feedback), attempt_id, user_id, question_id),
             )
             cur.execute(
                 """
-                UPDATE mistake_journal
+                UPDATE mistake_journal mj
                 SET concept_to_learn = %s
-                WHERE attempt_id = %s AND question_id = %s
+                FROM attempts att
+                WHERE mj.attempt_id = att.id AND att.id = %s AND att.user_id = %s
+                  AND mj.question_id = %s
                 """,
-                (feedback.get("concept_to_learn", ""), attempt_id, question_id),
+                (feedback.get("concept_to_learn", ""), attempt_id, user_id, question_id),
             )
         conn.commit()
 
 
-def get_review_attempts(limit: int = 100) -> list[dict[str, Any]]:
+def get_review_attempts(user_id: int, limit: int = 100) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -385,15 +399,16 @@ def get_review_attempts(limit: int = 100) -> list[dict[str, Any]]:
                     t.difficulty
                 FROM attempts a
                 JOIN tests t ON t.id = a.test_id
+                WHERE a.user_id = %s
                 ORDER BY a.started_at DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (user_id, limit),
             )
             return cur.fetchall()
 
 
-def get_dashboard_stats() -> DashboardStats:
+def get_dashboard_stats(user_id: int) -> DashboardStats:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -402,8 +417,9 @@ def get_dashboard_stats() -> DashboardStats:
                     COUNT(*)::int AS total_tests_taken,
                     COALESCE(AVG(score_percent), 0)::float8 AS average_score
                 FROM attempts
-                WHERE status = 'submitted'
-                """
+                WHERE status = 'submitted' AND user_id = %s
+                """,
+                (user_id,),
             )
             basic = cur.fetchone()
 
@@ -413,12 +429,13 @@ def get_dashboard_stats() -> DashboardStats:
                     q.topic,
                     AVG(CASE WHEN a.is_correct THEN 1.0 ELSE 0.0 END) AS accuracy
                 FROM answers a
-                JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted'
+                JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted' AND att.user_id = %s
                 JOIN questions q ON q.id = a.question_id
                 GROUP BY q.topic
                 ORDER BY accuracy ASC
                 LIMIT 5
-                """
+                """,
+                (user_id,),
             )
             weak = [r["topic"] for r in cur.fetchall()]
 
@@ -426,9 +443,11 @@ def get_dashboard_stats() -> DashboardStats:
                 """
                 SELECT recommended_next_practice
                 FROM progress
+                WHERE user_id = %s
                 ORDER BY created_at DESC
                 LIMIT 1
-                """
+                """,
+                (user_id,),
             )
             rec = cur.fetchone()
             recommendation = (
@@ -445,7 +464,7 @@ def get_dashboard_stats() -> DashboardStats:
     )
 
 
-def get_recent_activity(limit: int = 10) -> list[dict[str, Any]]:
+def get_recent_activity(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -462,15 +481,17 @@ def get_recent_activity(limit: int = 10) -> list[dict[str, Any]]:
                     COALESCE(a.submitted_at, a.started_at) AS activity_time
                 FROM attempts a
                 JOIN tests t ON t.id = a.test_id
+                WHERE a.user_id = %s
                 ORDER BY activity_time DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (user_id, limit),
             )
             return cur.fetchall()
 
 
 def list_mistakes(
+    user_id: int,
     exam_type: str | None = None,
     section: str | None = None,
     topic: str | None = None,
@@ -493,12 +514,12 @@ def list_mistakes(
             q.choices,
             q.explanation
         FROM mistake_journal mj
-        JOIN attempts a ON a.id = mj.attempt_id
+        JOIN attempts a ON a.id = mj.attempt_id AND a.user_id = %s
         JOIN tests t ON t.id = a.test_id
         JOIN questions q ON q.id = mj.question_id
         WHERE 1=1
     """
-    params: list[Any] = []
+    params: list[Any] = [user_id]
 
     if exam_type:
         query += " AND t.exam_type = %s"
@@ -521,12 +542,13 @@ def list_mistakes(
 
 
 def create_retry_test_from_mistakes(
+    user_id: int,
     exam_type: str,
     section: str,
     topic: str | None = None,
     max_questions: int = 10,
 ) -> int | None:
-    mistakes = list_mistakes(exam_type=exam_type, section=section, topic=topic, only_open=True)
+    mistakes = list_mistakes(user_id, exam_type=exam_type, section=section, topic=topic, only_open=True)
     unique_by_question: dict[int, dict[str, Any]] = {}
     for m in mistakes:
         qid = m["question_id"]
@@ -553,6 +575,7 @@ def create_retry_test_from_mistakes(
         )
 
     return create_test_with_questions(
+        user_id,
         exam_type=exam_type,
         section=section,
         num_questions=len(questions_payload),
@@ -564,7 +587,7 @@ def create_retry_test_from_mistakes(
     )
 
 
-def get_progress_over_time() -> list[dict[str, Any]]:
+def get_progress_over_time(user_id: int) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -574,14 +597,15 @@ def get_progress_over_time() -> list[dict[str, Any]]:
                     submitted_at,
                     score_percent
                 FROM attempts
-                WHERE status = 'submitted'
+                WHERE status = 'submitted' AND user_id = %s
                 ORDER BY submitted_at
-                """
+                """,
+                (user_id,),
             )
             return cur.fetchall()
 
 
-def get_accuracy_by_topic() -> list[dict[str, Any]]:
+def get_accuracy_by_topic(user_id: int) -> list[dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -592,26 +616,30 @@ def get_accuracy_by_topic() -> list[dict[str, Any]]:
                     SUM(CASE WHEN a.is_correct THEN 1 ELSE 0 END)::int AS correct,
                     ROUND(AVG(CASE WHEN a.is_correct THEN 1.0 ELSE 0.0 END) * 100.0, 2) AS accuracy_pct
                 FROM answers a
-                JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted'
+                JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted' AND att.user_id = %s
                 JOIN questions q ON q.id = a.question_id
                 GROUP BY q.topic
                 ORDER BY accuracy_pct ASC, total DESC
-                """
+                """,
+                (user_id,),
             )
             return cur.fetchall()
 
 
-def get_latest_progress_snapshot() -> dict[str, Any] | None:
+def get_latest_progress_snapshot(user_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT * FROM progress ORDER BY created_at DESC LIMIT 1")
+            cur.execute(
+                "SELECT * FROM progress WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            )
             return cur.fetchone()
 
 
-def build_performance_summary_text() -> str:
-    stats = get_dashboard_stats()
-    accuracy_rows = get_accuracy_by_topic()
-    recent = get_recent_activity(limit=5)
+def build_performance_summary_text(user_id: int) -> str:
+    stats = get_dashboard_stats(user_id)
+    accuracy_rows = get_accuracy_by_topic(user_id)
+    recent = get_recent_activity(user_id, limit=5)
 
     lines = [
         f"Total submitted tests: {stats.total_tests_taken}",
@@ -630,24 +658,28 @@ def build_performance_summary_text() -> str:
     return "\n".join(lines)
 
 
-def save_recommended_next_practice(recommendation: str) -> None:
+def save_recommended_next_practice(user_id: int, recommendation: str) -> None:
     with get_conn() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("SELECT id FROM progress ORDER BY created_at DESC LIMIT 1")
+            cur.execute(
+                "SELECT id FROM progress WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            )
             latest = cur.fetchone()
             if latest:
                 cur.execute(
                     """
                     UPDATE progress
                     SET recommended_next_practice = %s, created_at = NOW()
-                    WHERE id = %s
+                    WHERE id = %s AND user_id = %s
                     """,
-                    (recommendation, latest["id"]),
+                    (recommendation, latest["id"], user_id),
                 )
             else:
                 cur.execute(
                     """
                     INSERT INTO progress (
+                        user_id,
                         attempt_id,
                         tests_taken,
                         avg_score,
@@ -657,22 +689,23 @@ def save_recommended_next_practice(recommendation: str) -> None:
                         trend_summary,
                         recommended_next_practice
                     )
-                    VALUES (NULL, 0, 0, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, %s)
+                    VALUES (%s, NULL, 0, 0, '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, %s, %s)
                     """,
-                    ("Not enough data for a trend yet.", recommendation),
+                    (user_id, "Not enough data for a trend yet.", recommendation),
                 )
         conn.commit()
 
 
-def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
+def _insert_progress_snapshot(cur: Any, attempt_id: int, user_id: int) -> None:
     cur.execute(
         """
         SELECT
             COUNT(*)::int AS tests_taken,
             COALESCE(AVG(score_percent), 0)::float8 AS avg_score
         FROM attempts
-        WHERE status = 'submitted'
-        """
+        WHERE status = 'submitted' AND user_id = %s
+        """,
+        (user_id,),
     )
     base = cur.fetchone()
 
@@ -683,10 +716,11 @@ def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
             COUNT(*)::int AS total,
             SUM(CASE WHEN a.is_correct THEN 1 ELSE 0 END)::int AS correct
         FROM answers a
-        JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted'
+        JOIN attempts att ON att.id = a.attempt_id AND att.status = 'submitted' AND att.user_id = %s
         JOIN questions q ON q.id = a.question_id
         GROUP BY q.topic
-        """
+        """,
+        (user_id,),
     )
     topic_rows = cur.fetchall()
 
@@ -702,13 +736,15 @@ def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
 
     cur.execute(
         """
-        SELECT topic, COUNT(*)::int AS count
-        FROM mistake_journal
-        WHERE review_status = 'open'
-        GROUP BY topic
+        SELECT mj.topic, COUNT(*)::int AS count
+        FROM mistake_journal mj
+        JOIN attempts att ON att.id = mj.attempt_id AND att.user_id = %s
+        WHERE mj.review_status = 'open'
+        GROUP BY mj.topic
         ORDER BY count DESC
         LIMIT 5
-        """
+        """,
+        (user_id,),
     )
     mistakes_rows = cur.fetchall()
     frequent_mistakes = {row["topic"]: row["count"] for row in mistakes_rows}
@@ -717,10 +753,11 @@ def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
         """
         SELECT score_percent
         FROM attempts
-        WHERE status = 'submitted'
+        WHERE status = 'submitted' AND user_id = %s
         ORDER BY submitted_at DESC
         LIMIT 6
-        """
+        """,
+        (user_id,),
     )
     recent_scores = [float(r["score_percent"]) for r in cur.fetchall() if r["score_percent"] is not None]
     trend_summary = _build_trend_summary(recent_scores)
@@ -729,6 +766,7 @@ def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
     cur.execute(
         """
         INSERT INTO progress (
+            user_id,
             attempt_id,
             tests_taken,
             avg_score,
@@ -738,9 +776,10 @@ def _insert_progress_snapshot(cur: Any, attempt_id: int) -> None:
             trend_summary,
             recommended_next_practice
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
+            user_id,
             attempt_id,
             base["tests_taken"],
             round(base["avg_score"], 2),
