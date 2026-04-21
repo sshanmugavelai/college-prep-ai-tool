@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -67,27 +68,68 @@ class ClaudeClient:
             if starr_mode
             else "Use a general U.S. school curriculum style."
         )
-        if learner_level == "middle_school":
-            prompt = QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT.format(
-                section=section,
-                num_questions=num_questions,
-                difficulty=difficulty,
-                focus_note=focus_note,
-                curriculum_note=curriculum_note,
-            )
-        else:
-            prompt = QUESTION_GENERATION_PROMPT.format(
+        section_lower = section.strip().lower()
+        batch_size = _question_batch_size(section=section_lower, learner_level=learner_level)
+        total_batches = math.ceil(num_questions / batch_size)
+
+        all_questions: list[dict[str, Any]] = []
+        remaining = num_questions
+        batch_idx = 1
+        while remaining > 0:
+            this_batch = min(batch_size, remaining)
+            prompt = _build_question_prompt(
+                learner_level=learner_level,
                 exam_type=exam_type,
                 section=section,
-                num_questions=num_questions,
+                num_questions=this_batch,
                 difficulty=difficulty,
                 focus_note=focus_note,
                 curriculum_note=curriculum_note,
             )
-        if section.strip().lower() == "reading" and num_questions > 10:
-            prompt = f"{prompt}\n{_READING_LARGE_SET}"
-        # Large JSON payloads; 4000 output tokens often truncates mid-object (invalid JSON).
-        return self._call_json(prompt, max_tokens=8192)
+            if section_lower == "reading":
+                prompt = f"{prompt}\n{_READING_LARGE_SET}"
+            if total_batches > 1:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"Batch instruction: this is batch {batch_idx} of {total_batches}. "
+                    f"Return exactly {this_batch} questions and vary scenarios/subskills "
+                    f"from prior batches while staying on requested focus."
+                )
+
+            payload = self._call_json_with_retry(
+                prompt=prompt,
+                max_tokens=(5000 if section_lower == "reading" else 3500),
+            )
+            questions = payload.get("questions")
+            if not isinstance(questions, list):
+                raise ValueError("Claude response missing 'questions' list.")
+            if len(questions) < this_batch:
+                raise ValueError(
+                    f"Claude returned only {len(questions)} questions in a batch requiring {this_batch}."
+                )
+            all_questions.extend(questions[:this_batch])
+            remaining -= this_batch
+            batch_idx += 1
+
+        return {"questions": all_questions}
+
+    def _call_json_with_retry(self, prompt: str, *, max_tokens: int, attempts: int = 2) -> dict[str, Any]:
+        last_exc: Exception | None = None
+        for i in range(attempts):
+            try:
+                return self._call_json(prompt, max_tokens=max_tokens)
+            except ValueError as exc:
+                last_exc = exc
+                if i == attempts - 1:
+                    break
+                prompt = (
+                    f"{prompt}\n\n"
+                    "Critical retry rule: return ONLY one valid JSON object with no markdown fences, "
+                    "no prose, no trailing comments, and no truncation."
+                )
+        if last_exc:
+            raise last_exc
+        raise ValueError("Claude JSON call failed unexpectedly.")
 
     def explain_mistake(
         self,
@@ -185,4 +227,40 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
     raise ValueError(
         "Claude returned JSON that failed to parse (often truncated output — try fewer questions "
         "or a shorter section, then retry)."
+    )
+
+
+def _question_batch_size(section: str, learner_level: str) -> int:
+    if section == "reading":
+        return 5
+    if learner_level == "middle_school":
+        return 10
+    return 12
+
+
+def _build_question_prompt(
+    *,
+    learner_level: str,
+    exam_type: str,
+    section: str,
+    num_questions: int,
+    difficulty: str,
+    focus_note: str,
+    curriculum_note: str,
+) -> str:
+    if learner_level == "middle_school":
+        return QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT.format(
+            section=section,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            focus_note=focus_note,
+            curriculum_note=curriculum_note,
+        )
+    return QUESTION_GENERATION_PROMPT.format(
+        exam_type=exam_type,
+        section=section,
+        num_questions=num_questions,
+        difficulty=difficulty,
+        focus_note=focus_note,
+        curriculum_note=curriculum_note,
     )
