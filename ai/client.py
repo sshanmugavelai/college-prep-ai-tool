@@ -13,6 +13,14 @@ from ai.prompts import (
 )
 from utils.config import get_anthropic_api_key, get_anthropic_model
 
+# Reading items embed a passage per question → much larger JSON than Math; output is capped (~8k tokens).
+_READING_LARGE_SET = """
+## Important (Reading, many questions)
+Each "question" field must stay short: passage at most ~120 words, choices at most ~30 words each,
+explanations at most 3 brief sentences. If you write long passages, the JSON response will be
+truncated and invalid. Prefer one short paragraph per item.
+"""
+
 
 class ClaudeClient:
     def __init__(self) -> None:
@@ -55,6 +63,8 @@ class ClaudeClient:
                 num_questions=num_questions,
                 difficulty=difficulty,
             )
+        if section.strip().lower() == "reading" and num_questions > 10:
+            prompt = f"{prompt}\n{_READING_LARGE_SET}"
         # Large JSON payloads; 4000 output tokens often truncates mid-object (invalid JSON).
         return self._call_json(prompt, max_tokens=8192)
 
