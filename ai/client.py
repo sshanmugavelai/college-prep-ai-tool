@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 from anthropic import Anthropic
@@ -23,10 +24,10 @@ class ClaudeClient:
             )
         self.client = Anthropic(api_key=key)
 
-    def _call_json(self, prompt: str) -> dict[str, Any]:
+    def _call_json(self, prompt: str, *, max_tokens: int = 4000) -> dict[str, Any]:
         response = self.client.messages.create(
             model=get_anthropic_model(),
-            max_tokens=4000,
+            max_tokens=max_tokens,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -54,7 +55,8 @@ class ClaudeClient:
                 num_questions=num_questions,
                 difficulty=difficulty,
             )
-        return self._call_json(prompt)
+        # Large JSON payloads; 4000 output tokens often truncates mid-object (invalid JSON).
+        return self._call_json(prompt, max_tokens=8192)
 
     def explain_mistake(
         self,
@@ -110,24 +112,46 @@ class ClaudeClient:
         return self._call_json(prompt)
 
 
+def _strip_markdown_fence(text: str) -> str:
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+    text = re.sub(r"^```(?:json)?\s*", "", text, count=1, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text, count=1)
+    return text.strip()
+
+
+def _relax_trailing_commas(json_blob: str) -> str:
+    """Allow occasional trailing commas before } or ] (invalid JSON but common in LLM output)."""
+    return re.sub(r",(\s*[}\]])", r"\1", json_blob)
+
+
 def _parse_json_response(raw: str) -> dict[str, Any]:
-    # Claude usually returns plain JSON, but this keeps the app resilient
-    # when markdown fences are included.
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
+    text = _strip_markdown_fence(raw)
 
-    cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:].strip()
+    def _try_load(s: str) -> dict[str, Any] | None:
+        for variant in (s, _relax_trailing_commas(s)):
+            try:
+                out = json.loads(variant)
+                if isinstance(out, dict):
+                    return out
+            except json.JSONDecodeError:
+                continue
+        return None
 
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
+    parsed = _try_load(text)
+    if parsed is not None:
+        return parsed
+
+    start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1 or end <= start:
-        raise ValueError("Claude response does not contain valid JSON object.")
+        raise ValueError("Claude response does not contain a JSON object.")
 
-    candidate = cleaned[start : end + 1]
-    return json.loads(candidate)
+    parsed = _try_load(text[start : end + 1])
+    if parsed is not None:
+        return parsed
+
+    raise ValueError(
+        "Claude returned JSON that failed to parse (often truncated output — try fewer questions "
+        "or a shorter section, then retry)."
+    )

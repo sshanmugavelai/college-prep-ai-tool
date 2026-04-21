@@ -11,6 +11,7 @@ Requirements:
 - correct_answer must be one of: A, B, C, D.
 - topic should be a concise skill tag (e.g. fractions, vocabulary, sentence basics).
 - explanation should be 2-4 sentences.
+- JSON only: escape any `"` inside strings as `\\"`. No trailing commas. Keep passages short so the JSON finishes.
 
 Return ONLY valid JSON in this exact schema:
 {{
@@ -41,6 +42,7 @@ Requirements:
 - correct_answer must be one of: A, B, C, D.
 - topic should be a concise skill tag like algebra, grammar, inference, punctuation.
 - explanation should be 2-4 sentences.
+- JSON only: escape any `"` inside strings as `\\"`. No trailing commas. Keep passages short so the JSON finishes.
 
 Return ONLY valid JSON in this exact schema:
 {{
