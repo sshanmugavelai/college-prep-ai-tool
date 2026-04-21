@@ -70,48 +70,101 @@ class ClaudeClient:
         )
         section_lower = section.strip().lower()
         batch_size = _question_batch_size(section=section_lower, learner_level=learner_level)
-        total_batches = math.ceil(num_questions / batch_size)
-
         all_questions: list[dict[str, Any]] = []
         remaining = num_questions
         batch_idx = 1
+        stalled_iterations = 0
+
         while remaining > 0:
             this_batch = min(batch_size, remaining)
+            questions = self._generate_questions_batch(
+                learner_level=learner_level,
+                exam_type=exam_type,
+                section=section,
+                section_lower=section_lower,
+                requested_count=this_batch,
+                difficulty=difficulty,
+                focus_note=focus_note,
+                curriculum_note=curriculum_note,
+                batch_idx=batch_idx,
+                total_target=num_questions,
+            )
+
+            valid_questions = _extract_valid_questions(questions, fallback_difficulty=difficulty)
+            if not valid_questions:
+                stalled_iterations += 1
+                if stalled_iterations >= 3:
+                    raise ValueError(
+                        "Question generation stalled after repeated retries. "
+                        "Try again, or reduce question count for this run."
+                    )
+                # Make next iteration lighter.
+                batch_size = max(1, batch_size // 2)
+                continue
+
+            stalled_iterations = 0
+            take_n = min(remaining, len(valid_questions))
+            all_questions.extend(valid_questions[:take_n])
+            remaining -= take_n
+            batch_idx += 1
+
+        return {"questions": all_questions}
+
+    def _generate_questions_batch(
+        self,
+        *,
+        learner_level: str,
+        exam_type: str,
+        section: str,
+        section_lower: str,
+        requested_count: int,
+        difficulty: str,
+        focus_note: str,
+        curriculum_note: str,
+        batch_idx: int,
+        total_target: int,
+    ) -> list[dict[str, Any]]:
+        current_count = requested_count
+        while current_count >= 1:
             prompt = _build_question_prompt(
                 learner_level=learner_level,
                 exam_type=exam_type,
                 section=section,
-                num_questions=this_batch,
+                num_questions=current_count,
                 difficulty=difficulty,
                 focus_note=focus_note,
                 curriculum_note=curriculum_note,
             )
             if section_lower == "reading":
                 prompt = f"{prompt}\n{_READING_LARGE_SET}"
-            if total_batches > 1:
-                prompt = (
-                    f"{prompt}\n\n"
-                    f"Batch instruction: this is batch {batch_idx} of {total_batches}. "
-                    f"Return exactly {this_batch} questions and vary scenarios/subskills "
-                    f"from prior batches while staying on requested focus."
-                )
 
-            payload = self._call_json_with_retry(
-                prompt=prompt,
-                max_tokens=(5000 if section_lower == "reading" else 3500),
+            prompt = (
+                f"{prompt}\n\n"
+                f"Batch instruction: generate batch {batch_idx} for a total target of {total_target}. "
+                f"Return exactly {current_count} questions and keep each question concise."
             )
-            questions = payload.get("questions")
-            if not isinstance(questions, list):
-                raise ValueError("Claude response missing 'questions' list.")
-            if len(questions) < this_batch:
-                raise ValueError(
-                    f"Claude returned only {len(questions)} questions in a batch requiring {this_batch}."
-                )
-            all_questions.extend(questions[:this_batch])
-            remaining -= this_batch
-            batch_idx += 1
 
-        return {"questions": all_questions}
+            try:
+                payload = self._call_json_with_retry(
+                    prompt=prompt,
+                    max_tokens=_generation_max_tokens(section_lower),
+                    attempts=3,
+                )
+            except ValueError:
+                if current_count == 1:
+                    return []
+                current_count = max(1, current_count // 2)
+                continue
+
+            questions = payload.get("questions")
+            if isinstance(questions, list) and questions:
+                return questions[:current_count]
+
+            if current_count == 1:
+                return []
+            current_count = max(1, current_count // 2)
+
+        return []
 
     def _call_json_with_retry(self, prompt: str, *, max_tokens: int, attempts: int = 2) -> dict[str, Any]:
         last_exc: Exception | None = None
@@ -264,3 +317,41 @@ def _build_question_prompt(
         focus_note=focus_note,
         curriculum_note=curriculum_note,
     )
+
+
+def _generation_max_tokens(section: str) -> int:
+    if section == "reading":
+        return 4500
+    return 3200
+
+
+def _extract_valid_questions(
+    raw_questions: list[Any],
+    *,
+    fallback_difficulty: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in raw_questions:
+        if not isinstance(item, dict):
+            continue
+        choices = item.get("choices")
+        if not isinstance(choices, list) or len(choices) != 4:
+            continue
+        correct = item.get("correct_answer")
+        if correct not in {"A", "B", "C", "D"}:
+            continue
+        question_text = item.get("question")
+        explanation = item.get("explanation")
+        topic = item.get("topic")
+        if not all(isinstance(v, str) and v.strip() for v in [question_text, explanation, topic]):
+            continue
+        normalized = {
+            "question": question_text.strip(),
+            "choices": [str(c).strip() for c in choices],
+            "correct_answer": correct,
+            "explanation": explanation.strip(),
+            "topic": topic.strip(),
+            "difficulty": str(item.get("difficulty", fallback_difficulty)).strip() or fallback_difficulty,
+        }
+        out.append(normalized)
+    return out
