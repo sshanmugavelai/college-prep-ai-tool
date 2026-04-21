@@ -67,6 +67,11 @@ def _apply_schema_patches_once(conn) -> None:
                     CHECK (exam_type IN ('SAT', 'ACT', 'Middle school'))
                     """
                 )
+                cur.execute("ALTER TABLE tests ADD COLUMN IF NOT EXISTS focus_keywords TEXT")
+                cur.execute(
+                    "ALTER TABLE tests ADD COLUMN IF NOT EXISTS starr_mode BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+                cur.execute("ALTER TABLE tests ADD COLUMN IF NOT EXISTS custom_instructions TEXT")
         conn.commit()
         _SCHEMA_PATCHED = True
 

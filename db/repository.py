@@ -27,17 +27,44 @@ def create_test_with_questions(
     timed: bool,
     time_limit_minutes: int | None,
     questions: list[dict[str, Any]],
+    focus_keywords: str | None = None,
+    starr_mode: bool = False,
+    custom_instructions: str | None = None,
     source: str = "ai",
 ) -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO tests (user_id, exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tests (
+                    user_id,
+                    exam_type,
+                    section,
+                    num_questions,
+                    difficulty,
+                    timed,
+                    time_limit_minutes,
+                    focus_keywords,
+                    starr_mode,
+                    custom_instructions,
+                    source
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (user_id, exam_type, section, num_questions, difficulty, timed, time_limit_minutes, source),
+                (
+                    user_id,
+                    exam_type,
+                    section,
+                    num_questions,
+                    difficulty,
+                    timed,
+                    time_limit_minutes,
+                    focus_keywords,
+                    starr_mode,
+                    custom_instructions,
+                    source,
+                ),
             )
             test_id = cur.fetchone()[0]
 

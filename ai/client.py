@@ -49,12 +49,29 @@ class ClaudeClient:
         num_questions: int,
         difficulty: str,
         learner_level: str = "sat",
+        focus_keywords: str = "",
+        starr_mode: bool = False,
+        custom_instructions: str = "",
     ) -> dict[str, Any]:
+        focus_note = (
+            focus_keywords.strip()
+            if focus_keywords.strip()
+            else "No specific topics provided. Pick a reasonable mix for the selected section."
+        )
+        if custom_instructions.strip():
+            focus_note = f"{focus_note}. Extra instructions: {custom_instructions.strip()}"
+        curriculum_note = (
+            "Use the Texas STAAR style and standards as the curriculum anchor for this set."
+            if starr_mode
+            else "Use a general U.S. school curriculum style."
+        )
         if learner_level == "middle_school":
             prompt = QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT.format(
                 section=section,
                 num_questions=num_questions,
                 difficulty=difficulty,
+                focus_note=focus_note,
+                curriculum_note=curriculum_note,
             )
         else:
             prompt = QUESTION_GENERATION_PROMPT.format(
@@ -62,6 +79,8 @@ class ClaudeClient:
                 section=section,
                 num_questions=num_questions,
                 difficulty=difficulty,
+                focus_note=focus_note,
+                curriculum_note=curriculum_note,
             )
         if section.strip().lower() == "reading" and num_questions > 10:
             prompt = f"{prompt}\n{_READING_LARGE_SET}"

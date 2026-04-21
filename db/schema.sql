@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS tests (
     difficulty TEXT NOT NULL CHECK (difficulty IN ('easy', 'medium', 'hard')),
     timed BOOLEAN NOT NULL DEFAULT FALSE,
     time_limit_minutes INTEGER,
+    focus_keywords TEXT,
+    starr_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    custom_instructions TEXT,
     source TEXT NOT NULL DEFAULT 'ai',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

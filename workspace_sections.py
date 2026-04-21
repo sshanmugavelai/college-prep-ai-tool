@@ -136,6 +136,24 @@ def render_generate() -> None:
     section = st.selectbox("Section", ["Reading", "Writing", "Math"])
     num_questions = st.slider("Number of questions", min_value=5, max_value=40, value=10, step=1)
     difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=1)
+    focus_keywords = st.text_input(
+        "Topic keywords (optional)",
+        value="",
+        placeholder="fractions, ratios, word problems, main idea, grammar rules",
+        help="Add specific skills/keywords so question generation is focused instead of random.",
+    )
+    starr_mode = st.toggle(
+        "Target Texas STAAR style",
+        value=(level == "middle_school"),
+        help="When enabled, Claude prioritizes STAAR-style wording and grade-level skills.",
+    )
+    custom_instructions = st.text_area(
+        "Extra instructions (optional)",
+        value="",
+        height=90,
+        placeholder="Example: Give mostly fraction comparison and simplifying fractions questions.",
+        help="Any extra parent request for this generated set.",
+    )
     timed = st.toggle("Timed mode", value=False)
     time_limit_minutes = (
         st.number_input("Time limit (minutes)", min_value=5, max_value=240, value=30, step=5)
@@ -153,6 +171,9 @@ def render_generate() -> None:
                     num_questions=num_questions,
                     difficulty=difficulty,
                     learner_level=level,
+                    focus_keywords=focus_keywords,
+                    starr_mode=starr_mode,
+                    custom_instructions=custom_instructions,
                 )
                 questions = validate_questions_payload(payload, expected_count=num_questions)
                 test_id = create_test_with_questions(
@@ -164,9 +185,17 @@ def render_generate() -> None:
                     timed=timed,
                     time_limit_minutes=int(time_limit_minutes) if timed else None,
                     questions=questions,
+                    focus_keywords=focus_keywords.strip() or None,
+                    starr_mode=starr_mode,
+                    custom_instructions=custom_instructions.strip() or None,
                     source="ai",
                 )
-                st.success(f"Created test #{test_id} with {len(questions)} questions.")
+                mode_label = "STAAR-focused" if starr_mode else "general curriculum"
+                topic_label = focus_keywords.strip() or "mixed topics"
+                st.success(
+                    f"Created test #{test_id} with {len(questions)} questions "
+                    f"({mode_label}; focus: {topic_label})."
+                )
             except Exception as exc:
                 st.error(f"Failed to generate/save test: {exc}")
 
@@ -174,6 +203,11 @@ def render_generate() -> None:
         st.code(
             json.dumps(
                 {
+                    "generation_controls": {
+                        "focus_keywords": "fractions, decimals, word problems",
+                        "starr_mode": True,
+                        "custom_instructions": "Grade 6-7 style and short word problems only.",
+                    },
                     "questions": [
                         {
                             "question": "...",
@@ -221,7 +255,16 @@ def render_take_test() -> None:
         if not tests:
             st.info("No tests available yet. Generate one in **Generate tests**.")
             return
-        test_options = {f"#{t['id']} - {t['exam_type']} {t['section']} ({t['difficulty']})": t for t in tests}
+        test_options = {}
+        for t in tests:
+            focus_bits = []
+            if t.get("focus_keywords"):
+                focus_bits.append(str(t["focus_keywords"]))
+            if t.get("starr_mode"):
+                focus_bits.append("STAAR")
+            focus_suffix = f" | Focus: {', '.join(focus_bits)}" if focus_bits else ""
+            label = f"#{t['id']} - {t['exam_type']} {t['section']} ({t['difficulty']}){focus_suffix}"
+            test_options[label] = t
         selected_label = st.selectbox("Select a test", list(test_options.keys()))
         selected_test = test_options[selected_label]
         test_mode = st.radio(
