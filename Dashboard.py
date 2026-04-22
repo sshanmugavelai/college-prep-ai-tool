@@ -1,7 +1,12 @@
 import streamlit as st
 
-from db.init_db import init_db
-from utils.auth_ui import account_sidebar, learner_badge, render_login_page
+from utils.auth_ui import (
+    account_sidebar,
+    learner_badge,
+    render_admin_sidebar_tools,
+    render_donate_sidebar,
+    render_login_page,
+)
 from utils.session import ensure_auth_session_version, init_session_state, is_logged_in
 from workspace_sections import render_generate, render_overview, render_review, render_take_test
 
@@ -24,12 +29,8 @@ with st.sidebar:
     learner_badge()
     account_sidebar(key_prefix="dash")
     st.caption("SAT/ACT practice with Claude + Postgres")
-    if st.button("Initialize / Verify Database"):
-        try:
-            init_db()
-            st.success("Database schema is ready.")
-        except Exception as exc:
-            st.error(f"Could not initialize DB: {exc}")
+    render_admin_sidebar_tools(key_prefix="dash_admin")
+    render_donate_sidebar()
     st.divider()
     st.subheader("More")
     st.page_link("pages/1_Mistake_Journal.py", label="Mistake Journal", icon="📓")

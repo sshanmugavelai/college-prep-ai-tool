@@ -1,45 +1,57 @@
-"""Streamlit login and session helpers for per-learner accounts."""
+"""Streamlit auth UI and account panels."""
 
 import streamlit as st
 
+from auth.orchestrator import AuthOrchestrator
+from auth.policy import evaluate_user_policy
 from db.init_db import init_db
-from db.users_repo import get_user_by_username
-from utils.session import clear_streamlit_caches, reset_user_session
+from utils.config import get_paypal_donate_url
+from utils.session import reset_user_session, set_authenticated_user_session
 
 
 def render_login_page() -> None:
+    orchestrator = AuthOrchestrator()
     st.title("College Prep AI")
-    st.caption("Enter your learner username to continue.")
+    st.caption("Sign in with Google to continue.")
 
-    username = st.text_input("Username", autocomplete="username")
-    c1, c2 = st.columns(2)
-    with c1:
-        go = st.button("Continue", type="primary", use_container_width=True, key="login_continue")
-    with c2:
-        reset = st.button("Reset session & caches", use_container_width=True, key="login_reset")
+    if not orchestrator.provider_configured():
+        st.error(
+            "Google sign-in is not configured. Set GOOGLE_OAUTH_CLIENT_ID, "
+            "GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REDIRECT_URI."
+        )
+        st.stop()
 
-    if go:
-        row = get_user_by_username(username)
-        if not row:
-            st.error("Unknown username.")
-            return
-        st.session_state.user_id = int(row["id"])
-        st.session_state.username = row["username"]
-        st.session_state.display_name = row["display_name"]
-        st.session_state.learner_level = row["learner_level"]
+    query_params = st.query_params.to_dict()
+    oauth_error = str(query_params.get("error", "")).strip()
+    if oauth_error:
+        st.error(f"Google sign-in failed: {oauth_error}")
+
+    try:
+        result = orchestrator.maybe_finish_google_sign_in(query_params=query_params)
+    except Exception as exc:
+        st.error(f"Sign-in failed: {exc}")
+        result = None
+
+    if result:
+        set_authenticated_user_session(
+            user_id=result.user_id,
+            username=result.username,
+            display_name=result.display_name,
+            learner_level=result.learner_level,
+            email=result.email,
+            is_admin=result.is_admin,
+        )
+        # Remove provider callback params from URL so reruns are clean.
+        st.query_params.clear()
         st.rerun()
 
-    if reset:
-        reset_user_session()
-        st.rerun()
-
-    with st.expander("First-time setup"):
-        if st.button("Initialize database & seed accounts"):
-            try:
-                init_db()
-                st.success("Done — try your username again.")
-            except Exception as exc:
-                st.error(f"Setup failed: {exc}")
+    auth_url = orchestrator.start_google_sign_in()
+    st.link_button(
+        "Continue with Google",
+        url=auth_url,
+        use_container_width=True,
+        type="primary",
+    )
 
 
 def require_user_id() -> int:
@@ -51,7 +63,7 @@ def require_user_id() -> int:
 
 
 def account_sidebar(*, key_prefix: str = "acct") -> None:
-    """Call inside ``with st.sidebar:``. Log out clears session + Streamlit caches."""
+    """Call inside ``with st.sidebar:``."""
     st.subheader("Account")
     if st.button(
         "Log out",
@@ -61,14 +73,50 @@ def account_sidebar(*, key_prefix: str = "acct") -> None:
     ):
         reset_user_session()
         st.rerun()
-    if st.button(
-        "Clear caches only",
-        key=f"{key_prefix}_cache",
-        help="Clears @st.cache_data / @st.cache_resource; stays signed in",
+
+
+def render_admin_sidebar_tools(*, key_prefix: str = "admin") -> None:
+    """Admin-only tools; hidden for non-admin users."""
+    email = str(st.session_state.get("email", "")).strip().lower()
+    policy = evaluate_user_policy(email=email)
+    if not policy.can_view_admin_tools:
+        return
+
+    st.subheader("Admin tools")
+    if policy.can_initialize_db and st.button(
+        "Initialize / Verify Database",
+        key=f"{key_prefix}_init_db",
         use_container_width=True,
     ):
-        clear_streamlit_caches()
-        st.rerun()
+        try:
+            init_db()
+            st.success("Database schema is ready.")
+        except Exception as exc:
+            st.error(f"Could not initialize DB: {exc}")
+
+    if policy.can_clear_cache and st.button(
+        "Clear caches only",
+        key=f"{key_prefix}_clear_cache",
+        help="Clears cached resources while keeping session login.",
+        use_container_width=True,
+    ):
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
+        st.success("Caches cleared.")
+
+
+def render_donate_sidebar() -> None:
+    url = get_paypal_donate_url()
+    if not url:
+        return
+    st.subheader("Support")
+    st.link_button("Donate with PayPal", url=url, use_container_width=True)
 
 
 def learner_badge() -> None:

@@ -2,7 +2,7 @@ import streamlit as st
 
 # Bump this when auth or session keys change so Streamlit Cloud visitors are not stuck
 # with a stale ``user_id`` from an old session (session_state survives reruns and deploys).
-AUTH_SESSION_VERSION = 4
+AUTH_SESSION_VERSION = 5
 
 
 def is_logged_in() -> bool:
@@ -21,7 +21,16 @@ def ensure_auth_session_version() -> None:
     key = "_auth_session_version"
     if st.session_state.get(key) == AUTH_SESSION_VERSION:
         return
-    for k in ("user_id", "username", "display_name", "learner_level", "current_attempt_id"):
+    for k in (
+        "user_id",
+        "username",
+        "display_name",
+        "learner_level",
+        "email",
+        "is_admin",
+        "oauth_state",
+        "current_attempt_id",
+    ):
         st.session_state.pop(k, None)
     st.session_state[key] = AUTH_SESSION_VERSION
 
@@ -62,6 +71,9 @@ _SESSION_RESET_KEYS = (
     "username",
     "display_name",
     "learner_level",
+    "email",
+    "is_admin",
+    "oauth_state",
     "current_attempt_id",
     "question_index",
     "attempt_started_at",
@@ -76,3 +88,24 @@ def reset_user_session() -> None:
     clear_streamlit_caches()
     for k in _SESSION_RESET_KEYS:
         st.session_state.pop(k, None)
+
+
+def set_authenticated_user_session(
+    *,
+    user_id: int,
+    username: str,
+    display_name: str,
+    learner_level: str,
+    email: str,
+    is_admin: bool,
+) -> None:
+    st.session_state.user_id = int(user_id)
+    st.session_state.username = username
+    st.session_state.display_name = display_name
+    st.session_state.learner_level = learner_level
+    st.session_state.email = email
+    st.session_state.is_admin = bool(is_admin)
+
+
+def current_user_is_admin() -> bool:
+    return bool(st.session_state.get("is_admin", False))

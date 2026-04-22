@@ -42,3 +42,62 @@ def get_anthropic_model() -> str:
     if model:
         return model
     return _streamlit_secret("ANTHROPIC_MODEL") or "claude-3-5-sonnet-latest"
+
+
+def _read_csv_emails(key: str) -> set[str]:
+    raw = (os.getenv(key) or _streamlit_secret(key) or "").strip()
+    if not raw:
+        return set()
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def get_admin_emails() -> set[str]:
+    return _read_csv_emails("ADMIN_EMAILS")
+
+
+def get_middle_school_emails() -> set[str]:
+    return _read_csv_emails("MIDDLE_SCHOOL_EMAILS")
+
+
+def get_google_oauth_client_id() -> str:
+    return (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or _streamlit_secret("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+
+
+def get_google_oauth_client_secret() -> str:
+    return (
+        os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or _streamlit_secret("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+    ).strip()
+
+
+def get_google_oauth_redirect_uri() -> str:
+    return (
+        os.getenv("GOOGLE_OAUTH_REDIRECT_URI") or _streamlit_secret("GOOGLE_OAUTH_REDIRECT_URI") or ""
+    ).strip()
+
+
+def get_google_oauth_authorize_url() -> str:
+    return (
+        os.getenv("GOOGLE_OAUTH_AUTHORIZE_URL")
+        or _streamlit_secret("GOOGLE_OAUTH_AUTHORIZE_URL")
+        or "https://accounts.google.com/o/oauth2/v2/auth"
+    ).strip()
+
+
+def get_google_oauth_token_url() -> str:
+    return (
+        os.getenv("GOOGLE_OAUTH_TOKEN_URL")
+        or _streamlit_secret("GOOGLE_OAUTH_TOKEN_URL")
+        or "https://oauth2.googleapis.com/token"
+    ).strip()
+
+
+def get_google_oauth_userinfo_url() -> str:
+    return (
+        os.getenv("GOOGLE_OAUTH_USERINFO_URL")
+        or _streamlit_secret("GOOGLE_OAUTH_USERINFO_URL")
+        or "https://openidconnect.googleapis.com/v1/userinfo"
+    ).strip()
+
+
+def get_paypal_donate_url() -> str:
+    return (os.getenv("PAYPAL_DONATE_URL") or _streamlit_secret("PAYPAL_DONATE_URL") or "").strip()

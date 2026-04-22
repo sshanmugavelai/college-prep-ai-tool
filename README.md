@@ -26,6 +26,9 @@ No microservices. No Redis. No complex infra.
 - `ai/client.py`: Claude API wrapper, JSON-safe parsing.
 - `ai/prompts.py`: reusable prompt templates.
 - `db/repository.py`: SQL operations for tests/attempts/answers/mistakes/progress.
+- `auth/google_oauth.py`: Google OAuth provider service (authorization URL, token exchange, userinfo mapping).
+- `auth/policy.py`: fail-closed policy gating for admin-only controls.
+- `auth/orchestrator.py`: orchestration between provider identity, DB user upsert, and auth result contract.
 - `utils/validation.py`: validates Claude question JSON shape.
 - `utils/session.py`: Streamlit session helpers.
 
@@ -81,6 +84,11 @@ Schema file: `db/schema.sql`
 │   ├── 1_Mistake_Journal.py
 │   ├── 2_Progress_and_Study_Plan.py
 │   └── 3_AI_Prompts.py
+├── auth/
+│   ├── contracts.py
+│   ├── google_oauth.py
+│   ├── orchestrator.py
+│   └── policy.py
 ├── db/
 │   ├── connection.py
 │   ├── init_db.py
@@ -236,24 +244,30 @@ With `.env` pointing at Neon:
 python -c "from db.init_db import init_db; init_db()"
 ```
 
-Or start the app and click **Initialize / Verify Database** in the sidebar (same operation).
+Or start the app and click **Initialize / Verify Database** in the sidebar (admin users only).
 
 ### 4) Run the app
 ```bash
 streamlit run Dashboard.py
 ```
 
-### Family learner accounts
-After the database is initialized, the app seeds **two accounts** (same dummy password for home use):
+### Authentication (Google OAuth)
+- Login is Google-based only (no local username/password prompt in UI).
+- Set:
+  - `GOOGLE_OAUTH_CLIENT_ID`
+  - `GOOGLE_OAUTH_CLIENT_SECRET`
+  - `GOOGLE_OAUTH_REDIRECT_URI`
+- Per-user records are still stored in local DB (`users`), linked via `user_identities(provider, subject, email)`.
+- Learner level is inferred on first login:
+  - emails in `MIDDLE_SCHOOL_EMAILS` -> `middle_school`
+  - everyone else -> `sat`
 
-| Username | Who | Track |
-|----------|-----|--------|
-| `ashwika` | Ashwika | SAT / high school prep (`sat`) — full SAT/ACT-style generation |
-| `thrishi` | Thrishi | Grade-level practice (`middle_school`) — easier, middle-school math/ELA, not SAT-hard |
+### Admin gating (fail-closed)
+- Sidebar maintenance actions (**Initialize / Verify Database**, **Clear caches only**) are hidden unless email is in `ADMIN_EMAILS`.
+- If admin list is empty, everyone is treated as non-admin (fail-closed).
 
-Default password for both: **`prep2026`** (change later in the DB or by adding a password-change flow).
-
-Each learner signs in on the Dashboard; **tests, attempts, mistakes, and progress are kept separate** per user.
+### Donations
+- Optional PayPal donate button appears in sidebar when `PAYPAL_DONATE_URL` is configured.
 
 ### Streamlit Community Cloud
 Use the **same** `DATABASE_URL` (Neon URI) and API keys under **App settings → Secrets** — not `localhost`.
@@ -270,6 +284,21 @@ Only if you explicitly want Docker/local Postgres for experiments: run a contain
 - No background workers
 - No caching layer required
 - JSON contracts for AI calls to keep storage simple
+
+## Product architecture boundaries (for growth to 100+ users)
+
+- **Detection/services**
+  - `auth/google_oauth.py` handles provider protocol and identity extraction only.
+- **Policy/gating**
+  - `auth/policy.py` computes admin capability flags from config/email.
+- **Orchestration**
+  - `auth/orchestrator.py` coordinates callback completion and user upsert.
+- **Lifecycle state**
+  - `utils/session.py` owns auth session state contract (`user_id`, `email`, `is_admin`, etc.).
+- **Reporting/UI**
+  - `utils/auth_ui.py` renders login/account/admin/donate sidebar sections and reuses policy/orchestrator contracts.
+
+This keeps auth/donation/admin behavior composable and avoids ad hoc logic spread across pages.
 
 ---
 

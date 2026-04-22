@@ -5,7 +5,13 @@ from db.repository import (
     list_mistakes,
     list_tests,
 )
-from utils.auth_ui import account_sidebar, learner_badge, render_login_page, require_user_id
+from utils.auth_ui import (
+    account_sidebar,
+    learner_badge,
+    render_donate_sidebar,
+    render_login_page,
+    require_user_id,
+)
 from utils.session import ensure_auth_session_version, is_logged_in
 
 ensure_auth_session_version()
@@ -21,6 +27,7 @@ st.caption("Track incorrect answers by topic and create retry tests.")
 with st.sidebar:
     learner_badge()
     account_sidebar(key_prefix="mj")
+    render_donate_sidebar()
 
 level = st.session_state.get("learner_level", "sat")
 if level == "middle_school":

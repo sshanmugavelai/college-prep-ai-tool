@@ -7,7 +7,7 @@ from ai.prompts import (
     REVIEW_HINTS_PROMPT,
     STUDY_PLAN_PROMPT,
 )
-from utils.auth_ui import account_sidebar, learner_badge, render_login_page
+from utils.auth_ui import account_sidebar, learner_badge, render_donate_sidebar, render_login_page
 from utils.session import ensure_auth_session_version, is_logged_in
 
 ensure_auth_session_version()
@@ -19,6 +19,7 @@ with st.sidebar:
     st.page_link("Dashboard.py", label="← Dashboard", icon="📘")
     learner_badge()
     account_sidebar(key_prefix="prompts")
+    render_donate_sidebar()
 
 st.title("🤖 Claude Prompt Templates")
 st.caption("Reusable prompts for question generation, mistake analysis, review hints, and study planning.")
@@ -30,6 +31,8 @@ st.code(
         section="Math",
         num_questions=10,
         difficulty="medium",
+        focus_note="fractions and ratios",
+        curriculum_note="Use a general U.S. school curriculum style.",
     ),
     language="text",
 )
@@ -40,6 +43,8 @@ st.code(
         section="Math",
         num_questions=10,
         difficulty="medium",
+        focus_note="fractions and ratios",
+        curriculum_note="Use the Texas STAAR style and standards as the curriculum anchor for this set.",
     ),
     language="text",
 )

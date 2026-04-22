@@ -1,4 +1,4 @@
-"""Idempotent migrations: users table, user_id columns, seed Ashwika + Thrishi."""
+"""Idempotent migrations: users table, user_id columns, OAuth identities, seed learners."""
 
 
 def _table_exists(cur, name: str) -> bool:
@@ -21,10 +21,25 @@ def run_family_migrations(conn) -> None:
             CREATE TABLE IF NOT EXISTS users (
                 id BIGSERIAL PRIMARY KEY,
                 username TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
+                password_hash TEXT,
                 display_name TEXT NOT NULL,
                 learner_level TEXT NOT NULL CHECK (learner_level IN ('sat', 'middle_school')),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_identities (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (provider, subject),
+                UNIQUE (provider, email)
             )
             """
         )
