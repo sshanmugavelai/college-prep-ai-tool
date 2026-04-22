@@ -5,55 +5,40 @@ Stack: **Python + Streamlit + Postgres + Claude API**.
 
 No microservices. No Redis. No complex infra.
 
+### Documentation
+
+- **[Architecture](docs/ARCHITECTURE.md)** — system context, layers, data flows, database model, session state, configuration, and extension points (with diagrams).
+
 ---
 
-## 1) Simple Architecture (End-to-End)
+## 1) Architecture overview (End-to-End)
+
+The app is a **single Streamlit process**: pages call **`db/repository.py`** for SQL and **`ai/client.py`** for Claude. There is no separate REST API.
 
 ### Streamlit UI flow
-1. **Dashboard (`app.py`)**
-   - shows total tests, average score, weak topics, recent activity, next recommendation.
-2. **Generate Practice Test (`pages/1_Generate_Practice_Test.py`)**
-   - pick exam/section/count/difficulty/timed.
-   - call Claude to generate structured JSON questions.
-   - save test + questions to Postgres.
-3. **Take Test (`pages/2_Take_Test.py`)**
-   - start attempt from a saved test.
-   - answer one question at a time.
-   - optional timer.
-   - submit attempt.
-4. **Review Results (`pages/3_Review_Results.py`)**
-   - calculate and display score.
-   - show selected vs correct answers + explanations.
-   - generate AI mistake feedback and store it.
-5. **Mistake Journal (`pages/4_Mistake_Journal.py`)**
-   - list incorrect answers grouped/filterable by topic.
-   - generate retry test from open mistakes.
-6. **Progress & Study Plan (`pages/5_Progress_and_Study_Plan.py`)**
-   - score trend chart, topic accuracy chart.
-   - ask Claude for weekly study plan from performance summary.
-7. **AI Prompt Templates (`pages/6_AI_Prompts.py`)**
-   - reusable prompts for generation, explanation, coaching.
 
-### Backend logic (simple service/repository style)
-- `ai/client.py`: Claude API wrapper, JSON-safe parsing.
-- `ai/prompts.py`: reusable prompt templates.
-- `db/repository.py`: SQL operations for tests/attempts/answers/mistakes/progress.
-- `utils/validation.py`: validates Claude question JSON shape.
-- `utils/session.py`: Streamlit session helpers.
+| Page | Script | Role |
+|------|--------|------|
+| Dashboard | `app.py` | Metrics, recent activity, DB init button |
+| Generate Practice Test | `pages/1_Generate_Practice_Test.py` | Claude → validate JSON → save `tests` + `questions` |
+| Take Test | `pages/2_Take_Test.py` | Attempt lifecycle, one question at a time |
+| Review Results | `pages/3_Review_Results.py` | Score, explanations, AI mistake feedback |
+| Mistake Journal | `pages/4_Mistake_Journal.py` | Open mistakes, retry-test generation |
+| Progress & Study Plan | `pages/5_Progress_and_Study_Plan.py` | Charts, progress snapshots, weekly AI plan |
+| AI Prompts | `pages/6_AI_Prompts.py` | Reference / copy of prompt templates |
 
-### Database usage
-- Postgres stores all persistent data:
-  - generated tests and questions
-  - student attempts and answers
-  - mistake journal
-  - progress snapshots and recommendations
+### Backend modules
 
-### Claude integration
-- Claude is used for:
-1. question generation
-2. mistake explanation
-3. weekly plan generation
-- Each call expects **structured JSON** and validates/parses before saving.
+- **`ai/client.py`** — Anthropic client and JSON parsing from model output.
+- **`ai/prompts.py`** — Prompt templates (aligned with JSON contracts below).
+- **`db/repository.py`** — All persistence: tests, attempts, answers, mistakes, progress.
+- **`utils/validation.py`** — Question payload shape before insert.
+- **`utils/session.py`** — Keys for in-progress attempt state.
+- **`utils/formatting.py`** — Shared display helpers.
+
+### Claude usage
+
+Claude generates **structured JSON** for: question batches, per-mistake coaching, and weekly study plans. Shapes are documented in **§6 Claude Prompt Templates** below.
 
 ---
 
@@ -107,6 +92,8 @@ Schema file: `db/schema.sql`
 │   ├── formatting.py
 │   ├── session.py
 │   └── validation.py
+├── docs/
+│   └── ARCHITECTURE.md
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -264,6 +251,8 @@ In the app, click **Initialize / Verify Database** once.
 - No background workers
 - No caching layer required
 - JSON contracts for AI calls to keep storage simple
+
+For diagrams (context, containers, ER, sequences), see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ---
 
