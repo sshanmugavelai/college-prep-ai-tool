@@ -18,6 +18,138 @@ class DashboardStats:
     recommended_next_practice: str
 
 
+@dataclass(frozen=True)
+class UserPreferences:
+    preferred_exam_type: str | None
+    preferred_section: str
+    preferred_num_questions: int
+    preferred_difficulty: str
+    preferred_timed: bool
+    preferred_time_limit_minutes: int | None
+    preferred_focus_keywords: str
+    preferred_starr_mode: bool
+    preferred_custom_instructions: str
+
+
+def get_user_generate_preferences(user_id: int, *, learner_level: str) -> UserPreferences:
+    defaults = _default_user_preferences(learner_level=learner_level)
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    preferred_exam_type,
+                    preferred_section,
+                    preferred_num_questions,
+                    preferred_difficulty,
+                    preferred_timed,
+                    preferred_time_limit_minutes,
+                    preferred_focus_keywords,
+                    preferred_starr_mode,
+                    preferred_custom_instructions
+                FROM user_preferences
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        return defaults
+
+    exam_type = row.get("preferred_exam_type")
+    if learner_level == "middle_school":
+        exam_type = "Middle school"
+    if not exam_type:
+        exam_type = defaults.preferred_exam_type
+
+    return UserPreferences(
+        preferred_exam_type=exam_type,
+        preferred_section=str(row.get("preferred_section") or defaults.preferred_section),
+        preferred_num_questions=int(row.get("preferred_num_questions") or defaults.preferred_num_questions),
+        preferred_difficulty=str(row.get("preferred_difficulty") or defaults.preferred_difficulty),
+        preferred_timed=bool(
+            defaults.preferred_timed if row.get("preferred_timed") is None else row.get("preferred_timed")
+        ),
+        preferred_time_limit_minutes=(
+            int(row["preferred_time_limit_minutes"])
+            if row.get("preferred_time_limit_minutes") is not None
+            else defaults.preferred_time_limit_minutes
+        ),
+        preferred_focus_keywords=str(row.get("preferred_focus_keywords") or defaults.preferred_focus_keywords),
+        preferred_starr_mode=bool(
+            defaults.preferred_starr_mode
+            if row.get("preferred_starr_mode") is None
+            else row.get("preferred_starr_mode")
+        ),
+        preferred_custom_instructions=str(
+            row.get("preferred_custom_instructions") or defaults.preferred_custom_instructions
+        ),
+    )
+
+
+def save_user_generate_preferences(
+    user_id: int,
+    *,
+    learner_level: str,
+    exam_type: str | None,
+    section: str,
+    num_questions: int,
+    difficulty: str,
+    timed: bool,
+    time_limit_minutes: int | None,
+    focus_keywords: str | None,
+    starr_mode: bool,
+    custom_instructions: str | None,
+) -> None:
+    persisted_exam_type = "Middle school" if learner_level == "middle_school" else (exam_type or "SAT")
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_preferences (
+                    user_id,
+                    preferred_exam_type,
+                    preferred_section,
+                    preferred_num_questions,
+                    preferred_difficulty,
+                    preferred_timed,
+                    preferred_time_limit_minutes,
+                    preferred_focus_keywords,
+                    preferred_starr_mode,
+                    preferred_custom_instructions,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (user_id)
+                DO UPDATE SET
+                    preferred_exam_type = EXCLUDED.preferred_exam_type,
+                    preferred_section = EXCLUDED.preferred_section,
+                    preferred_num_questions = EXCLUDED.preferred_num_questions,
+                    preferred_difficulty = EXCLUDED.preferred_difficulty,
+                    preferred_timed = EXCLUDED.preferred_timed,
+                    preferred_time_limit_minutes = EXCLUDED.preferred_time_limit_minutes,
+                    preferred_focus_keywords = EXCLUDED.preferred_focus_keywords,
+                    preferred_starr_mode = EXCLUDED.preferred_starr_mode,
+                    preferred_custom_instructions = EXCLUDED.preferred_custom_instructions,
+                    updated_at = NOW()
+                """,
+                (
+                    user_id,
+                    persisted_exam_type,
+                    section,
+                    num_questions,
+                    difficulty,
+                    timed,
+                    time_limit_minutes,
+                    (focus_keywords or "").strip() or None,
+                    starr_mode,
+                    (custom_instructions or "").strip() or None,
+                ),
+            )
+        conn.commit()
+
+
 def create_test_with_questions(
     user_id: int,
     exam_type: str,
@@ -847,3 +979,29 @@ def _build_recommendation(weak_topics: list[str], frequent_mistakes: dict[str, i
         return f"Review core rules for {topic}, then do a short 10-question timed set."
 
     return "Take one medium mixed test and review every explanation carefully."
+
+
+def _default_user_preferences(*, learner_level: str) -> UserPreferences:
+    if learner_level == "middle_school":
+        return UserPreferences(
+            preferred_exam_type="Middle school",
+            preferred_section="Math",
+            preferred_num_questions=10,
+            preferred_difficulty="medium",
+            preferred_timed=False,
+            preferred_time_limit_minutes=30,
+            preferred_focus_keywords="",
+            preferred_starr_mode=True,
+            preferred_custom_instructions="",
+        )
+    return UserPreferences(
+        preferred_exam_type="SAT",
+        preferred_section="Math",
+        preferred_num_questions=10,
+        preferred_difficulty="medium",
+        preferred_timed=False,
+        preferred_time_limit_minutes=30,
+        preferred_focus_keywords="",
+        preferred_starr_mode=False,
+        preferred_custom_instructions="",
+    )

@@ -4,6 +4,7 @@ from psycopg.rows import dict_row
 
 from db.connection import get_conn
 from db.migrate_family_users import ensure_family_seed_users
+from db.passwords import verify_password
 from utils.config import get_middle_school_emails
 
 from auth.contracts import ExternalIdentity
@@ -37,6 +38,39 @@ def get_user_by_id(user_id: int) -> Optional[dict[str, Any]]:
             )
             row = cur.fetchone()
     return dict(row) if row else None
+
+
+def authenticate_local_credentials(*, username: str, password: str) -> Optional[dict[str, Any]]:
+    user = (username or "").strip()
+    plain = password or ""
+    if not user or not plain:
+        return None
+    with get_conn() as conn:
+        ensure_family_seed_users(conn)
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT id, username, display_name, learner_level, password_hash
+                FROM users
+                WHERE LOWER(username) = LOWER(%s)
+                LIMIT 1
+                """,
+                (user,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            stored = str(row.get("password_hash") or "").strip()
+            if not stored:
+                return None
+            if not verify_password(plain, stored):
+                return None
+            return {
+                "id": int(row["id"]),
+                "username": str(row["username"]),
+                "display_name": str(row["display_name"]),
+                "learner_level": str(row["learner_level"]),
+            }
 
 
 def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, Any]:

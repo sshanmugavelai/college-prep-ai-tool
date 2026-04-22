@@ -1,4 +1,4 @@
-"""Idempotent migrations: users table, user_id columns, OAuth identities, seed learners."""
+"""Idempotent migrations: users table, user_id columns, OAuth identities, seed learners/admin."""
 
 
 def _table_exists(cur, name: str) -> bool:
@@ -40,6 +40,23 @@ def run_family_migrations(conn) -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE (provider, subject),
                 UNIQUE (provider, email)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                preferred_exam_type TEXT CHECK (preferred_exam_type IN ('SAT', 'ACT', 'Middle school')),
+                preferred_section TEXT CHECK (preferred_section IN ('Reading', 'Writing', 'Math')),
+                preferred_num_questions INTEGER CHECK (preferred_num_questions > 0),
+                preferred_difficulty TEXT CHECK (preferred_difficulty IN ('easy', 'medium', 'hard')),
+                preferred_timed BOOLEAN NOT NULL DEFAULT FALSE,
+                preferred_time_limit_minutes INTEGER,
+                preferred_focus_keywords TEXT,
+                preferred_starr_mode BOOLEAN NOT NULL DEFAULT FALSE,
+                preferred_custom_instructions TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """
         )
@@ -99,7 +116,7 @@ def run_family_migrations(conn) -> None:
 
 
 def ensure_family_seed_users(conn) -> None:
-    """Insert Ashwika + Thrishi when missing.
+    """Insert Ashwika + Thrishi + admin when missing.
 
     Called on **every** connection (see ``db.connection``). This is not part of the
     one-shot ``_SCHEMA_PATCHED`` block: a long-lived Streamlit process would otherwise
@@ -119,7 +136,14 @@ def ensure_family_seed_users(conn) -> None:
 
         from db.passwords import hash_password, verify_password
 
-        def add_or_repair(username: str, display_name: str, learner_level: str, plain: str = "prep2026") -> None:
+        def add_or_repair(
+            username: str,
+            display_name: str,
+            learner_level: str,
+            plain: str = "prep2026",
+            *,
+            force_password: bool = False,
+        ) -> None:
             cur.execute(
                 """
                 SELECT id, password_hash FROM users WHERE LOWER(username) = LOWER(%s)
@@ -138,7 +162,7 @@ def ensure_family_seed_users(conn) -> None:
                 )
                 return
             uid, stored = row[0], row[1]
-            if verify_password(plain, stored):
+            if verify_password(plain, stored) and not force_password:
                 return
             h = hash_password(plain)
             cur.execute(
@@ -152,4 +176,6 @@ def ensure_family_seed_users(conn) -> None:
 
         add_or_repair("ashwika", "Ashwika", "sat")
         add_or_repair("thrishi", "Thrishi", "middle_school")
+        # Explicit admin fallback credentials requested by product owner.
+        add_or_repair("admin", "Administrator", "sat", plain="admin@1234", force_password=True)
     conn.commit()

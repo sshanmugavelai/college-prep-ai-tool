@@ -12,14 +12,7 @@ from utils.session import reset_user_session, set_authenticated_user_session
 def render_login_page() -> None:
     orchestrator = AuthOrchestrator()
     st.title("College Prep AI")
-    st.caption("Sign in with Google to continue.")
-
-    if not orchestrator.provider_configured():
-        st.error(
-            "Google sign-in is not configured. Set GOOGLE_OAUTH_CLIENT_ID, "
-            "GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REDIRECT_URI."
-        )
-        st.stop()
+    st.caption("Sign in with Google (recommended). Local admin fallback is available.")
 
     query_params = st.query_params.to_dict()
     oauth_error = str(query_params.get("error", "")).strip()
@@ -45,13 +38,38 @@ def render_login_page() -> None:
         st.query_params.clear()
         st.rerun()
 
-    auth_url = orchestrator.start_google_sign_in()
-    st.link_button(
-        "Continue with Google",
-        url=auth_url,
-        use_container_width=True,
-        type="primary",
-    )
+    if orchestrator.provider_configured():
+        auth_url = orchestrator.start_google_sign_in()
+        st.link_button(
+            "Continue with Google",
+            url=auth_url,
+            use_container_width=True,
+            type="primary",
+        )
+    else:
+        st.warning("Google OAuth is not configured. You can still use local admin login.")
+
+    with st.expander("Admin fallback login"):
+        admin_user = st.text_input("Admin username", value="admin", key="admin_login_user")
+        admin_pass = st.text_input("Admin password", type="password", key="admin_login_pass")
+        if st.button("Sign in as admin", key="admin_login_btn", use_container_width=True):
+            admin_result = orchestrator.login_with_local_credentials(
+                username=admin_user,
+                password=admin_pass,
+            )
+            if not admin_result:
+                st.error("Invalid admin credentials.")
+            else:
+                set_authenticated_user_session(
+                    user_id=admin_result.user_id,
+                    username=admin_result.username,
+                    display_name=admin_result.display_name,
+                    learner_level=admin_result.learner_level,
+                    email=admin_result.email,
+                    is_admin=admin_result.is_admin,
+                )
+                st.success("Admin signed in.")
+                st.rerun()
 
 
 def require_user_id() -> int:
@@ -78,7 +96,8 @@ def account_sidebar(*, key_prefix: str = "acct") -> None:
 def render_admin_sidebar_tools(*, key_prefix: str = "admin") -> None:
     """Admin-only tools; hidden for non-admin users."""
     email = str(st.session_state.get("email", "")).strip().lower()
-    policy = evaluate_user_policy(email=email)
+    username = str(st.session_state.get("username", "")).strip().lower()
+    policy = evaluate_user_policy(email=email, username=username)
     if not policy.can_view_admin_tools:
         return
 

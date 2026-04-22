@@ -15,10 +15,11 @@ class UserPolicy:
     can_clear_cache: bool
 
 
-def evaluate_user_policy(*, email: str) -> UserPolicy:
+def evaluate_user_policy(*, email: str = "", username: str = "") -> UserPolicy:
     normalized_email = (email or "").strip().lower()
+    normalized_username = (username or "").strip().lower()
     admins = get_admin_emails()
-    is_admin = normalized_email in admins
+    is_admin = normalized_email in admins or normalized_username == "admin"
     return UserPolicy(
         is_admin=is_admin,
         can_view_admin_tools=is_admin,

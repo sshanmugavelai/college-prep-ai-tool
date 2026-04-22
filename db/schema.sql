@@ -87,3 +87,17 @@ CREATE TABLE IF NOT EXISTS user_identities (
     UNIQUE (provider, subject),
     UNIQUE (provider, email)
 );
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    preferred_exam_type TEXT CHECK (preferred_exam_type IN ('SAT', 'ACT', 'Middle school')),
+    preferred_section TEXT CHECK (preferred_section IN ('Reading', 'Writing', 'Math')),
+    preferred_num_questions INTEGER CHECK (preferred_num_questions > 0),
+    preferred_difficulty TEXT CHECK (preferred_difficulty IN ('easy', 'medium', 'hard')),
+    preferred_timed BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_time_limit_minutes INTEGER,
+    preferred_focus_keywords TEXT,
+    preferred_starr_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_custom_instructions TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

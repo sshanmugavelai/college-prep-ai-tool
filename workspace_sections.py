@@ -12,10 +12,12 @@ from db.repository import (
     get_attempt,
     get_attempt_questions,
     get_dashboard_stats,
+    get_user_generate_preferences,
     get_recent_activity,
     get_review_attempts,
     list_tests,
     save_answer,
+    save_user_generate_preferences,
     submit_attempt,
     update_ai_feedback,
 )
@@ -125,6 +127,7 @@ def render_overview() -> None:
 def render_generate() -> None:
     user_id = require_user_id()
     level = st.session_state.get("learner_level", "sat")
+    prefs = get_user_generate_preferences(user_id, learner_level=level)
     st.subheader("Generate practice test")
     if level == "middle_school":
         st.caption("Claude writes **grade-level** practice (middle school) — not full SAT/ACT difficulty.")
@@ -132,31 +135,60 @@ def render_generate() -> None:
         exam_type = "Middle school"
     else:
         st.caption("Claude generates original SAT/ACT-style questions in structured JSON.")
-        exam_type = st.selectbox("Exam type", ["SAT", "ACT"])
-    section = st.selectbox("Section", ["Reading", "Writing", "Math"])
-    num_questions = st.slider("Number of questions", min_value=5, max_value=40, value=10, step=1)
-    difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"], index=1)
+        exam_type = st.selectbox(
+            "Exam type",
+            ["SAT", "ACT"],
+            index=(["SAT", "ACT"].index(prefs.preferred_exam_type) if prefs.preferred_exam_type in {"SAT", "ACT"} else 0),
+        )
+    section = st.selectbox(
+        "Section",
+        ["Reading", "Writing", "Math"],
+        index=(["Reading", "Writing", "Math"].index(prefs.preferred_section) if prefs.preferred_section in {"Reading", "Writing", "Math"} else 2),
+    )
+    num_questions = st.slider(
+        "Number of questions",
+        min_value=5,
+        max_value=40,
+        value=max(5, min(40, int(prefs.preferred_num_questions))),
+        step=1,
+    )
+    difficulty = st.selectbox(
+        "Difficulty",
+        ["easy", "medium", "hard"],
+        index=(["easy", "medium", "hard"].index(prefs.preferred_difficulty) if prefs.preferred_difficulty in {"easy", "medium", "hard"} else 1),
+    )
     focus_keywords = st.text_input(
         "Topic keywords (optional)",
-        value="",
+        value=prefs.preferred_focus_keywords,
         placeholder="fractions, ratios, word problems, main idea, grammar rules",
         help="Add specific skills/keywords so question generation is focused instead of random.",
     )
     starr_mode = st.toggle(
         "Target Texas STAAR style",
-        value=(level == "middle_school"),
+        value=bool(prefs.preferred_starr_mode),
         help="When enabled, Claude prioritizes STAAR-style wording and grade-level skills.",
     )
     custom_instructions = st.text_area(
         "Extra instructions (optional)",
-        value="",
+        value=prefs.preferred_custom_instructions,
         height=90,
         placeholder="Example: Give mostly fraction comparison and simplifying fractions questions.",
         help="Any extra parent request for this generated set.",
     )
-    timed = st.toggle("Timed mode", value=False)
+    save_as_default = st.checkbox(
+        "Save these as my default generation preferences",
+        value=True,
+        help="Preferences are saved per user profile.",
+    )
+    timed = st.toggle("Timed mode", value=bool(prefs.preferred_timed))
     time_limit_minutes = (
-        st.number_input("Time limit (minutes)", min_value=5, max_value=240, value=30, step=5)
+        st.number_input(
+            "Time limit (minutes)",
+            min_value=5,
+            max_value=240,
+            value=max(5, min(240, int(prefs.preferred_time_limit_minutes or 30))),
+            step=5,
+        )
         if timed
         else None
     )
@@ -190,6 +222,20 @@ def render_generate() -> None:
                     custom_instructions=custom_instructions.strip() or None,
                     source="ai",
                 )
+                if save_as_default:
+                    save_user_generate_preferences(
+                        user_id,
+                        learner_level=level,
+                        exam_type=exam_type,
+                        section=section,
+                        num_questions=num_questions,
+                        difficulty=difficulty,
+                        timed=timed,
+                        time_limit_minutes=(int(time_limit_minutes) if timed and time_limit_minutes else None),
+                        focus_keywords=focus_keywords,
+                        starr_mode=starr_mode,
+                        custom_instructions=custom_instructions,
+                    )
                 mode_label = "STAAR-focused" if starr_mode else "general curriculum"
                 topic_label = focus_keywords.strip() or "mixed topics"
                 st.success(
