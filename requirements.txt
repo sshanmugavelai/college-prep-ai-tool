@@ -4,3 +4,5 @@ python-dotenv
 anthropic
 pandas
 plotly
+requests
+pytest

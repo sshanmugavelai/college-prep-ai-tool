@@ -1,16 +1,52 @@
+QUESTION_GENERATION_MIDDLE_SCHOOL_PROMPT = """
+You are a middle school (grades 6–8) skills tutor. This is NOT SAT or ACT exam prep.
+Write original practice questions for {section} at a grade-appropriate level (about 7th grade).
+{curriculum_note}
+
+Requirements:
+- Number of questions: {num_questions}
+- Difficulty: {difficulty} (interpret as age-appropriate, not SAT-hard)
+- Avoid SAT-style traps, long multi-step SAT math, or college-prep jargon.
+- Use clear, encouraging language. Reading passages should be short. Math should be pre-algebra / early algebra only.
+- Focus request from parent/student: {focus_note}
+- Each question must have exactly 4 choices.
+- correct_answer must be one of: A, B, C, D.
+- topic should be a concise skill tag (e.g. fractions, vocabulary, sentence basics).
+- explanation should be 2-4 sentences.
+- JSON only: escape any `"` inside strings as `\\"`. No trailing commas. Keep passages short so the JSON finishes.
+
+Return ONLY valid JSON in this exact schema:
+{{
+  "questions": [
+    {{
+      "question": "...",
+      "choices": ["...", "...", "...", "..."],
+      "correct_answer": "B",
+      "explanation": "...",
+      "topic": "fractions",
+      "difficulty": "{difficulty}"
+    }}
+  ]
+}}
+"""
+
+
 QUESTION_GENERATION_PROMPT = """
 You are an SAT/ACT question writer and tutor.
 Generate original {exam_type} {section} questions.
+{curriculum_note}
 
 Requirements:
 - Number of questions: {num_questions}
 - Difficulty: {difficulty}
 - Avoid copyrighted passages; keep content original.
 - Use clear language for a high school student.
+- Focus request from parent/student: {focus_note}
 - Each question must have exactly 4 choices.
 - correct_answer must be one of: A, B, C, D.
 - topic should be a concise skill tag like algebra, grammar, inference, punctuation.
 - explanation should be 2-4 sentences.
+- JSON only: escape any `"` inside strings as `\\"`. No trailing commas. Keep passages short so the JSON finishes.
 
 Return ONLY valid JSON in this exact schema:
 {{
@@ -46,6 +82,32 @@ Return ONLY valid JSON in this exact schema:
   "why_user_wrong": "...",
   "concept_to_learn": "...",
   "difficulty_adjustment": "increase/decrease/same"
+}}
+"""
+
+
+REVIEW_HINTS_PROMPT = """
+You are a patient SAT/ACT tutor. The student already submitted this question — they may have been correct,
+used a longer path, or picked a wrong answer for an interesting reason. They are reviewing on flashcards
+or with hints (not re-taking the test).
+
+Exam: {exam_type}
+Section: {section}
+Topic: {topic}
+Difficulty: {difficulty}
+Question: {question}
+Choices (A–D): {choices_lines}
+The student's answer was: {user_answer}
+The correct answer is: {correct_answer} (use this only to shape hints; do not leak the letter in hints 1–2.)
+
+Write exactly 3 short hints for spaced review, from gentle → more specific:
+- Hint 1: skill or reading strategy to try first (no letters).
+- Hint 2: a nudge about comparing choices or checking evidence (no correct letter).
+- Hint 3: may narrow the reasoning but still keep it study-focused (avoid spoiling the click if possible).
+
+Return ONLY valid JSON:
+{{
+  "hints": ["...", "...", "..."]
 }}
 """
 

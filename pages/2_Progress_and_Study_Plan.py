@@ -12,15 +12,34 @@ from db.repository import (
     get_progress_over_time,
     save_recommended_next_practice,
 )
+from utils.auth_ui import (
+    account_sidebar,
+    learner_badge,
+    render_donate_sidebar,
+    render_login_page,
+    require_user_id,
+)
+from utils.session import ensure_auth_session_version, is_logged_in
 
+ensure_auth_session_version()
+if not is_logged_in():
+    render_login_page()
+    st.stop()
+
+user_id = require_user_id()
 
 st.title("📈 Progress & AI Study Plan")
 st.caption("Track trends and generate a weekly practice plan from Claude.")
 
+with st.sidebar:
+    learner_badge()
+    account_sidebar(key_prefix="prog")
+    render_donate_sidebar()
+
 try:
-    score_rows = get_progress_over_time()
-    topic_rows = get_accuracy_by_topic()
-    latest = get_latest_progress_snapshot()
+    score_rows = get_progress_over_time(user_id)
+    topic_rows = get_accuracy_by_topic(user_id)
+    latest = get_latest_progress_snapshot(user_id)
 except Exception as exc:
     st.error(f"Database is not ready: {exc}")
     st.stop()
@@ -72,7 +91,7 @@ else:
 st.markdown("---")
 st.subheader("Generate AI weekly study plan")
 
-summary_text = build_performance_summary_text()
+summary_text = build_performance_summary_text(user_id)
 with st.expander("Performance summary sent to Claude"):
     st.code(summary_text)
 
@@ -87,7 +106,7 @@ if st.button("Generate weekly AI study plan", type="primary"):
             if isinstance(plan, dict):
                 overall = plan.get("overall_advice")
                 if overall:
-                    save_recommended_next_practice(str(overall))
+                    save_recommended_next_practice(user_id, str(overall))
         except Exception as exc:
             st.error(f"Could not generate study plan: {exc}")
 

@@ -5,40 +5,46 @@ Stack: **Python + Streamlit + Postgres + Claude API**.
 
 No microservices. No Redis. No complex infra.
 
-### Documentation
-
-- **[Architecture](docs/ARCHITECTURE.md)** — system context, layers, data flows, database model, session state, configuration, and extension points (with diagrams).
-
 ---
 
-## 1) Architecture overview (End-to-End)
-
-The app is a **single Streamlit process**: pages call **`db/repository.py`** for SQL and **`ai/client.py`** for Claude. There is no separate REST API.
+## 1) Simple Architecture (End-to-End)
 
 ### Streamlit UI flow
+1. **Main workspace (`Dashboard.py` + `workspace_sections.py`)** — one screen with steps: **Overview**, **Generate tests**, **Take test**, **Review**.
+   - *Overview*: metrics, weak topics, recent activity, recommended next practice.
+   - *Generate*: exam/section/count/difficulty/timed; Claude JSON questions; list saved tests.
+   - *Take test*: start attempt, one question at a time, optional timer, submit.
+   - *Review*: attempt summary, per-question explanations, AI mistake feedback.
+2. **Mistake Journal (`pages/1_Mistake_Journal.py`)**
+   - list incorrect answers grouped/filterable by topic; retry tests from mistakes.
+3. **Progress & Study Plan (`pages/2_Progress_and_Study_Plan.py`)**
+   - score trend, topic accuracy, weekly AI study plan.
+4. **AI Prompt Templates (`pages/3_AI_Prompts.py`)**
+   - reusable prompts for generation, explanation, coaching.
 
-| Page | Script | Role |
-|------|--------|------|
-| Dashboard | `app.py` | Metrics, recent activity, DB init button |
-| Generate Practice Test | `pages/1_Generate_Practice_Test.py` | Claude → validate JSON → save `tests` + `questions` |
-| Take Test | `pages/2_Take_Test.py` | Attempt lifecycle, one question at a time |
-| Review Results | `pages/3_Review_Results.py` | Score, explanations, AI mistake feedback |
-| Mistake Journal | `pages/4_Mistake_Journal.py` | Open mistakes, retry-test generation |
-| Progress & Study Plan | `pages/5_Progress_and_Study_Plan.py` | Charts, progress snapshots, weekly AI plan |
-| AI Prompts | `pages/6_AI_Prompts.py` | Reference / copy of prompt templates |
+### Backend logic (simple service/repository style)
+- `ai/client.py`: Claude API wrapper, JSON-safe parsing.
+- `ai/prompts.py`: reusable prompt templates.
+- `db/repository.py`: SQL operations for tests/attempts/answers/mistakes/progress.
+- `auth/google_oauth.py`: Google OAuth provider service (authorization URL, token exchange, userinfo mapping).
+- `auth/policy.py`: fail-closed policy gating for admin-only controls.
+- `auth/orchestrator.py`: orchestration between provider identity, DB user upsert, and auth result contract.
+- `utils/validation.py`: validates Claude question JSON shape.
+- `utils/session.py`: Streamlit session helpers.
 
-### Backend modules
+### Database usage
+- Postgres stores all persistent data:
+  - generated tests and questions
+  - student attempts and answers
+  - mistake journal
+  - progress snapshots and recommendations
 
-- **`ai/client.py`** — Anthropic client and JSON parsing from model output.
-- **`ai/prompts.py`** — Prompt templates (aligned with JSON contracts below).
-- **`db/repository.py`** — All persistence: tests, attempts, answers, mistakes, progress.
-- **`utils/validation.py`** — Question payload shape before insert.
-- **`utils/session.py`** — Keys for in-progress attempt state.
-- **`utils/formatting.py`** — Shared display helpers.
-
-### Claude usage
-
-Claude generates **structured JSON** for: question batches, per-mistake coaching, and weekly study plans. Shapes are documented in **§6 Claude Prompt Templates** below.
+### Claude integration
+- Claude is used for:
+1. question generation
+2. mistake explanation
+3. weekly plan generation
+- Each call expects **structured JSON** and validates/parses before saving.
 
 ---
 
@@ -72,14 +78,17 @@ Schema file: `db/schema.sql`
 
 ```text
 .
-├── app.py
+├── Dashboard.py
+├── workspace_sections.py
 ├── pages/
-│   ├── 1_Generate_Practice_Test.py
-│   ├── 2_Take_Test.py
-│   ├── 3_Review_Results.py
-│   ├── 4_Mistake_Journal.py
-│   ├── 5_Progress_and_Study_Plan.py
-│   └── 6_AI_Prompts.py
+│   ├── 1_Mistake_Journal.py
+│   ├── 2_Progress_and_Study_Plan.py
+│   └── 3_AI_Prompts.py
+├── auth/
+│   ├── contracts.py
+│   ├── google_oauth.py
+│   ├── orchestrator.py
+│   └── policy.py
 ├── db/
 │   ├── connection.py
 │   ├── init_db.py
@@ -92,8 +101,6 @@ Schema file: `db/schema.sql`
 │   ├── formatting.py
 │   ├── session.py
 │   └── validation.py
-├── docs/
-│   └── ARCHITECTURE.md
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -200,11 +207,13 @@ File: `ai/prompts.py`
 
 ---
 
-## Local Setup (Mac mini)
+## Local setup (development machine)
 
-## Prerequisites
+The app talks to **one** Postgres database: whatever you set in `DATABASE_URL`. For this project we use **[Neon](https://neon.tech)** (free tier) — not a separate database on your laptop.
+
+### Prerequisites
 - Python 3.11+
-- Postgres 14+ (local install or Docker)
+- A Neon account and project (Postgres in the cloud)
 - Claude API key
 
 ### 1) Clone and install
@@ -214,33 +223,57 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2) Start Postgres
-If local Postgres is already running, create DB:
-```bash
-createdb college_prep_ai
-```
-
-Or Docker quick option:
-```bash
-docker run --name college-prep-postgres -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=college_prep_ai -p 5432:5432 -d postgres:16
-```
-
-### 3) Environment variables
+### 2) Environment variables (Neon)
 ```bash
 cp .env.example .env
 ```
-Edit `.env`:
-- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/college_prep_ai`
-- `ANTHROPIC_API_KEY=...`
-- `ANTHROPIC_MODEL=claude-3-5-sonnet-latest`
 
-### 4) Run app
+Edit `.env`:
+
+1. In the **Neon Console**, open your project → **Connect** → copy the **connection string** (URI).
+2. Set `DATABASE_URL` to that URI. It must include SSL, e.g.  
+   `postgresql://USER:PASSWORD@ep-xxxxx.region.aws.neon.tech/neondb?sslmode=require`
+3. Set `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL`.
+
+There is **no** second “local Postgres” to configure for normal use. If `DATABASE_URL` points at Neon, every query and migration uses Neon.
+
+### 3) Create tables on Neon (once per empty database)
+With `.env` pointing at Neon:
+
 ```bash
-streamlit run app.py
+python -c "from db.init_db import init_db; init_db()"
 ```
 
-In the app, click **Initialize / Verify Database** once.
+Or start the app and click **Initialize / Verify Database** in the sidebar (admin users only).
+
+### 4) Run the app
+```bash
+streamlit run Dashboard.py
+```
+
+### Authentication (Google OAuth)
+- Login is Google-based only (no local username/password prompt in UI).
+- Set:
+  - `GOOGLE_OAUTH_CLIENT_ID`
+  - `GOOGLE_OAUTH_CLIENT_SECRET`
+  - `GOOGLE_OAUTH_REDIRECT_URI`
+- Per-user records are still stored in local DB (`users`), linked via `user_identities(provider, subject, email)`.
+- Learner level is inferred on first login:
+  - emails in `MIDDLE_SCHOOL_EMAILS` -> `middle_school`
+  - everyone else -> `sat`
+
+### Admin gating (fail-closed)
+- Sidebar maintenance actions (**Initialize / Verify Database**, **Clear caches only**) are hidden unless email is in `ADMIN_EMAILS`.
+- If admin list is empty, everyone is treated as non-admin (fail-closed).
+
+### Donations
+- Optional PayPal donate button appears in sidebar when `PAYPAL_DONATE_URL` is configured.
+
+### Streamlit Community Cloud
+Use the **same** `DATABASE_URL` (Neon URI) and API keys under **App settings → Secrets** — not `localhost`.
+
+### Optional: Postgres on your own machine
+Only if you explicitly want Docker/local Postgres for experiments: run a container, create a database, and set `DATABASE_URL` to that instance instead of Neon. The application code is identical.
 
 ---
 
@@ -252,7 +285,20 @@ In the app, click **Initialize / Verify Database** once.
 - No caching layer required
 - JSON contracts for AI calls to keep storage simple
 
-For diagrams (context, containers, ER, sequences), see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+## Product architecture boundaries (for growth to 100+ users)
+
+- **Detection/services**
+  - `auth/google_oauth.py` handles provider protocol and identity extraction only.
+- **Policy/gating**
+  - `auth/policy.py` computes admin capability flags from config/email.
+- **Orchestration**
+  - `auth/orchestrator.py` coordinates callback completion and user upsert.
+- **Lifecycle state**
+  - `utils/session.py` owns auth session state contract (`user_id`, `email`, `is_admin`, etc.).
+- **Reporting/UI**
+  - `utils/auth_ui.py` renders login/account/admin/donate sidebar sections and reuses policy/orchestrator contracts.
+
+This keeps auth/donation/admin behavior composable and avoids ad hoc logic spread across pages.
 
 ---
 
