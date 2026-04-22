@@ -1,11 +1,14 @@
 CREATE TABLE IF NOT EXISTS tests (
     id BIGSERIAL PRIMARY KEY,
-    exam_type TEXT NOT NULL CHECK (exam_type IN ('SAT', 'ACT')),
+    exam_type TEXT NOT NULL CHECK (exam_type IN ('SAT', 'ACT', 'Middle school')),
     section TEXT NOT NULL CHECK (section IN ('Reading', 'Writing', 'Math')),
     num_questions INTEGER NOT NULL CHECK (num_questions > 0),
     difficulty TEXT NOT NULL CHECK (difficulty IN ('easy', 'medium', 'hard')),
     timed BOOLEAN NOT NULL DEFAULT FALSE,
     time_limit_minutes INTEGER,
+    focus_keywords TEXT,
+    starr_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    custom_instructions TEXT,
     source TEXT NOT NULL DEFAULT 'ai',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -33,7 +36,8 @@ CREATE TABLE IF NOT EXISTS attempts (
     correct_count INTEGER,
     total_questions INTEGER,
     score_percent NUMERIC(5, 2),
-    ai_recommendation TEXT
+    ai_recommendation TEXT,
+    practice_mode BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS answers (
@@ -71,4 +75,29 @@ CREATE TABLE IF NOT EXISTS progress (
     trend_summary TEXT,
     recommended_next_practice TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_identities (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider, subject),
+    UNIQUE (provider, email)
+);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    preferred_exam_type TEXT CHECK (preferred_exam_type IN ('SAT', 'ACT', 'Middle school')),
+    preferred_section TEXT CHECK (preferred_section IN ('Reading', 'Writing', 'Math')),
+    preferred_num_questions INTEGER CHECK (preferred_num_questions > 0),
+    preferred_difficulty TEXT CHECK (preferred_difficulty IN ('easy', 'medium', 'hard')),
+    preferred_timed BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_time_limit_minutes INTEGER,
+    preferred_focus_keywords TEXT,
+    preferred_starr_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_custom_instructions TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
