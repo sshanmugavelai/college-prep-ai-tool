@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib.parse import urlencode
@@ -29,6 +33,8 @@ class GoogleOAuthConfig:
 class GoogleOAuthService:
     """External provider service: Google OAuth protocol and identity mapping."""
 
+    _STATE_TTL_SECONDS = 600
+
     def __init__(self, *, config: Optional[GoogleOAuthConfig] = None) -> None:
         self.config = config or GoogleOAuthConfig(
             client_id=get_google_oauth_client_id(),
@@ -50,8 +56,13 @@ class GoogleOAuthService:
             and c.userinfo_url
         )
 
-    def create_state(self) -> str:
-        return secrets.token_urlsafe(24)
+    def create_state(self, *, learner_level: str = "sat") -> str:
+        normalized_level = "middle_school" if learner_level == "middle_school" else "sat"
+        nonce = secrets.token_urlsafe(24)
+        issued_at = str(int(time.time()))
+        payload = f"{issued_at}.{normalized_level}.{nonce}"
+        signature = self._sign_state_payload(payload)
+        return f"{payload}.{signature}"
 
     def build_authorize_url(self, state: str) -> str:
         query = urlencode(
@@ -76,8 +87,11 @@ class GoogleOAuthService:
     ) -> ExternalIdentity:
         if not code:
             raise ValueError("Missing OAuth authorization code.")
-        if not state or state != expected_state:
+        if not state:
+            raise ValueError("Missing OAuth state. Please retry sign-in.")
+        if expected_state and state != expected_state:
             raise ValueError("OAuth state mismatch. Please retry sign-in.")
+        self._validate_state_token(state)
 
         token_data = self._fetch_token(code)
         access_token = str(token_data.get("access_token", "")).strip()
@@ -139,3 +153,38 @@ class GoogleOAuthService:
         if not isinstance(payload, dict):
             raise ValueError("Unexpected Google userinfo response format.")
         return payload
+
+    def _sign_state_payload(self, payload: str) -> str:
+        digest = hmac.new(
+            self.config.client_secret.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+    def _validate_state_token(self, state: str) -> None:
+        self.get_learner_level_from_state(state)
+
+    def get_learner_level_from_state(self, state: str) -> str:
+        try:
+            issued_at, learner_level, nonce, signature = state.split(".", 3)
+        except ValueError as exc:
+            raise ValueError("OAuth state mismatch. Please retry sign-in.") from exc
+
+        if not issued_at or not learner_level or not nonce or not signature:
+            raise ValueError("OAuth state mismatch. Please retry sign-in.")
+        if learner_level not in {"sat", "middle_school"}:
+            raise ValueError("OAuth state mismatch. Please retry sign-in.")
+
+        payload = f"{issued_at}.{learner_level}.{nonce}"
+        expected_signature = self._sign_state_payload(payload)
+        if not hmac.compare_digest(signature, expected_signature):
+            raise ValueError("OAuth state mismatch. Please retry sign-in.")
+
+        try:
+            issued_at_ts = int(issued_at)
+        except ValueError as exc:
+            raise ValueError("OAuth state mismatch. Please retry sign-in.") from exc
+        if time.time() - issued_at_ts > self._STATE_TTL_SECONDS:
+            raise ValueError("OAuth sign-in expired. Please retry sign-in.")
+        return learner_level

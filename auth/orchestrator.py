@@ -36,8 +36,8 @@ class AuthOrchestrator:
     def provider_configured(self) -> bool:
         return self.oauth_service.is_configured()
 
-    def start_google_sign_in(self) -> str:
-        state = self.oauth_service.create_state()
+    def start_google_sign_in(self, *, learner_level: str) -> str:
+        state = self.oauth_service.create_state(learner_level=learner_level)
         st.session_state.oauth_state = state
         return self.oauth_service.build_authorize_url(state)
 
@@ -48,12 +48,13 @@ class AuthOrchestrator:
 
         state = str(query_params.get("state", "")).strip()
         expected_state = str(st.session_state.get("oauth_state", "")).strip()
+        learner_level = self.oauth_service.get_learner_level_from_state(state)
         identity = self.oauth_service.exchange_code_for_identity(
             code=code,
             state=state,
             expected_state=expected_state,
         )
-        user_row = upsert_user_from_external_identity(identity)
+        user_row = upsert_user_from_external_identity(identity, learner_level_hint=learner_level)
         policy = evaluate_user_policy(email=identity.email, username=str(user_row["username"]))
         return AuthResult(
             user_id=int(user_row["id"]),

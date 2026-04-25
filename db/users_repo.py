@@ -73,12 +73,17 @@ def authenticate_local_credentials(*, username: str, password: str) -> Optional[
             }
 
 
-def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, Any]:
+def upsert_user_from_external_identity(
+    identity: ExternalIdentity,
+    *,
+    learner_level_hint: Optional[str] = None,
+) -> dict[str, Any]:
     """Create or update local user for an external identity provider login."""
     provider = identity.provider.strip().lower()
     subject = identity.subject.strip()
     email = identity.email.strip().lower()
     display_name = identity.display_name.strip() or email
+    normalized_learner_level = _normalize_learner_level(learner_level_hint, email=email)
     if not provider or not subject or not email:
         raise ValueError("External identity requires provider, subject, and email.")
 
@@ -99,7 +104,10 @@ def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, 
             existing = cur.fetchone()
             if existing:
                 cur.execute("UPDATE user_identities SET email = %s WHERE provider = %s AND subject = %s", (email, provider, subject))
-                cur.execute("UPDATE users SET display_name = %s WHERE id = %s", (display_name, existing["id"]))
+                cur.execute(
+                    "UPDATE users SET display_name = %s, learner_level = %s WHERE id = %s",
+                    (display_name, normalized_learner_level, existing["id"]),
+                )
                 conn.commit()
                 return _get_user_by_id_cur(cur, int(existing["id"]))
 
@@ -121,8 +129,8 @@ def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, 
                     (subject, email, by_email_identity["identity_id"]),
                 )
                 cur.execute(
-                    "UPDATE users SET display_name = %s WHERE id = %s",
-                    (display_name, by_email_identity["user_id"]),
+                    "UPDATE users SET display_name = %s, learner_level = %s WHERE id = %s",
+                    (display_name, normalized_learner_level, by_email_identity["user_id"]),
                 )
                 conn.commit()
                 return _get_user_by_id_cur(cur, int(by_email_identity["user_id"]))
@@ -132,16 +140,18 @@ def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, 
             user_row = cur.fetchone()
             if user_row:
                 user_id = int(user_row["id"])
-                cur.execute("UPDATE users SET display_name = %s WHERE id = %s", (display_name, user_id))
+                cur.execute(
+                    "UPDATE users SET display_name = %s, learner_level = %s WHERE id = %s",
+                    (display_name, normalized_learner_level, user_id),
+                )
             else:
-                learner_level = _infer_learner_level(email=email)
                 cur.execute(
                     """
                     INSERT INTO users (username, password_hash, display_name, learner_level)
                     VALUES (%s, NULL, %s, %s)
                     RETURNING id
                     """,
-                    (email, display_name, learner_level),
+                    (email, display_name, normalized_learner_level),
                 )
                 user_id = int(cur.fetchone()["id"])
 
@@ -162,6 +172,14 @@ def upsert_user_from_external_identity(identity: ExternalIdentity) -> dict[str, 
 
 def _infer_learner_level(*, email: str) -> str:
     return "middle_school" if email.strip().lower() in get_middle_school_emails() else "sat"
+
+
+def _normalize_learner_level(learner_level_hint: Optional[str], *, email: str) -> str:
+    if learner_level_hint == "middle_school":
+        return "middle_school"
+    if learner_level_hint == "sat":
+        return "sat"
+    return _infer_learner_level(email=email)
 
 
 def _get_user_by_id_cur(cur: Any, user_id: int) -> dict[str, Any]:

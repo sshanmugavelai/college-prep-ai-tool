@@ -12,7 +12,7 @@ from utils.session import reset_user_session, set_authenticated_user_session
 def render_login_page() -> None:
     orchestrator = AuthOrchestrator()
     st.title("College Prep AI")
-    st.caption("Sign in with Google (recommended). Local admin fallback is available.")
+    st.caption("Choose the learner track, then sign in with Google. Local admin fallback is available.")
 
     query_params = st.query_params.to_dict()
     oauth_error = str(query_params.get("error", "")).strip()
@@ -39,7 +39,14 @@ def render_login_page() -> None:
         st.rerun()
 
     if orchestrator.provider_configured():
-        auth_url = orchestrator.start_google_sign_in()
+        learner_track = st.radio(
+            "Learner track",
+            options=["High school (SAT/ACT)", "Middle school"],
+            horizontal=True,
+            key="login_learner_track",
+        )
+        learner_level = "middle_school" if learner_track == "Middle school" else "sat"
+        auth_url = orchestrator.start_google_sign_in(learner_level=learner_level)
         st.link_button(
             "Continue with Google",
             url=auth_url,
